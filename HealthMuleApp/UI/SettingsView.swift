@@ -119,7 +119,7 @@ struct SettingsView: View {
             Text("Diagnostics")
         } footer: {
             Text(
-                "The export contains lifecycle events, counts, durations, and error codes—never health values, file contents, or OAuth tokens."
+                "The export contains lifecycle events, counts, durations, and error codes. It never contains health values, file contents, or OAuth tokens."
             )
         }
         .listRowBackground(HealthMuleStyle.surface)

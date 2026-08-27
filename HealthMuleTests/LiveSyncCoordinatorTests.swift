@@ -30,9 +30,7 @@ final class LiveSyncCoordinatorTests: XCTestCase {
                 backfillStart: fixture.dates[0]
             )
             XCTFail("Expected the staged record provider to fail.")
-        } catch CoordinatorTestError.recordFailure {
-            // Expected.
-        }
+        } catch CoordinatorTestError.recordFailure {}
 
         let committedMetrics = await health.committedMetrics()
         let recordedEvents = await events.snapshot()
@@ -149,9 +147,7 @@ final class LiveSyncCoordinatorTests: XCTestCase {
         do {
             _ = try await cancelled.value
             XCTFail("Expected the queued reconcile to observe cancellation.")
-        } catch is CancellationError {
-            // Expected.
-        }
+        } catch is CancellationError {}
         _ = try await following.value
 
         let changedMetrics = await health.changedMetrics()
@@ -466,9 +462,7 @@ final class LiveSyncCoordinatorTests: XCTestCase {
                 }
             )
             XCTFail("Expected the second day to fail.")
-        } catch CoordinatorTestError.recordFailure {
-            // Expected.
-        }
+        } catch CoordinatorTestError.recordFailure {}
 
         let progress = await progressLog.snapshot()
         XCTAssertEqual(
@@ -523,9 +517,7 @@ final class LiveSyncCoordinatorTests: XCTestCase {
         do {
             _ = try await task.value
             XCTFail("Expected cancellation.")
-        } catch is CancellationError {
-            // Expected.
-        }
+        } catch is CancellationError {}
         let stagingUnits = await progressLog.snapshot()
             .filter { $0.phase == .staging }
             .map(\.completedUnits)
@@ -551,9 +543,7 @@ final class LiveSyncCoordinatorTests: XCTestCase {
                 backfillStart: fixture.dates[0]
             )
             XCTFail("Expected the initial pass to fail.")
-        } catch CoordinatorTestError.recordFailure {
-            // Expected.
-        }
+        } catch CoordinatorTestError.recordFailure {}
         fixture.defaults.set([], forKey: "sync.lastStagedMetrics")
         fixture.defaults.set(
             fixture.dates[0].rawValue,

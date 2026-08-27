@@ -212,7 +212,7 @@ struct SectionHeading: View {
 }
 
 /// Explanatory copy for the group above it. iOS puts this below its section,
-/// not above it as a subtitle — a heading answers "what is this", a footer
+/// not above it as a subtitle. A heading answers "what is this". A footer
 /// answers "what does it mean".
 struct SectionFooter: View {
     let text: String

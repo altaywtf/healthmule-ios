@@ -56,7 +56,7 @@ enum HealthMetric: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
         case .sleep:
             "Exports de-duplicated asleep-stage minutes for sessions ending that day."
         case .workouts:
-            "Exports workout type, timing, duration, energy, and distance—never routes."
+            "Exports workout type, timing, duration, energy, and distance. Routes are excluded."
         }
     }
 

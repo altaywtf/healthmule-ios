@@ -202,7 +202,8 @@ fi
 
 expected_parallel_invocation="--no-print-directory --jobs=3 test-infra check-app-syntax test-core"
 expected_fast_commands=$'./scripts/test-infrastructure.sh\n./scripts/check-swift-syntax.sh\n./scripts/swift.sh test --parallel --disable-sandbox'
-actual_fast_verify="$(MAKEFLAGS= MAKELEVEL=0 make --no-print-directory --dry-run verify)"
+# Inspect default policy even when the caller selects a smaller verification pool.
+actual_fast_verify="$(env -u VERIFY_FAST_JOBS MAKEFLAGS= MAKELEVEL=0 make --no-print-directory --dry-run verify)"
 parallel_invocation="${actual_fast_verify%%$'\n'*}"
 actual_fast_commands="${actual_fast_verify#*$'\n'}"
 if [[ "${parallel_invocation}" != "make ${expected_parallel_invocation}" &&
@@ -213,7 +214,7 @@ fi
   fail "make verify must remain the fast infrastructure, syntax, and core-test gate."
 
 expected_cached_commands=$'./scripts/test-infrastructure.sh\n./scripts/check-swift-syntax.sh\n./scripts/swift.sh test --skip-build --parallel --disable-sandbox'
-actual_cached_verify="$(MAKEFLAGS= MAKELEVEL=0 make --no-print-directory --dry-run verify-cached)"
+actual_cached_verify="$(env -u VERIFY_FAST_JOBS MAKEFLAGS= MAKELEVEL=0 make --no-print-directory --dry-run verify-cached)"
 cached_parallel_invocation="${actual_cached_verify%%$'\n'*}"
 actual_cached_commands="${actual_cached_verify#*$'\n'}"
 if [[ "${cached_parallel_invocation}" != "make --no-print-directory --jobs=3 test-infra check-app-syntax test-core-cached" &&
@@ -223,7 +224,7 @@ fi
 [[ "${actual_cached_commands}" == "${expected_cached_commands}" ]] ||
   fail "make verify-cached must preserve infrastructure, syntax, and the no-rebuild Swift test bundle."
 
-actual_full_verify="$(MAKEFLAGS= MAKELEVEL=0 make --no-print-directory --dry-run verify-full)"
+actual_full_verify="$(env -u VERIFY_FAST_JOBS MAKEFLAGS= MAKELEVEL=0 make --no-print-directory --dry-run verify-full)"
 [[ "${actual_full_verify}" == *"${actual_fast_verify}"* ]] ||
   fail "make verify-full must extend the fast gate with the complete iOS test task."
 fast_verify_line="$(grep -nF -- "${expected_parallel_invocation}" <<<"${actual_full_verify}" | head -1 | cut -d: -f1)"
@@ -393,8 +394,8 @@ grep -Fq 'sha256sum "${swift_binary}"' .github/workflows/verify.yml ||
   fail "Fast CI must bind cached Swift artifacts to the installed executable."
 grep -Fq "if: steps.swift-build-cache.outputs.cache-hit != 'true'" .github/workflows/verify.yml ||
   fail "Cache misses must use the canonical build-and-test path."
-grep -Eq '^[[:space:]]+runs-on:[[:space:]]+blacksmith-2vcpu-ubuntu-2404[[:space:]]*$' .github/workflows/verify.yml ||
-  fail "Fast CI must use the Linux runner."
+grep -Eq '^[[:space:]]+runs-on:[[:space:]]+ubuntu-24\.04[[:space:]]*$' .github/workflows/verify.yml ||
+  fail "Fast CI must use the standard GitHub-hosted Ubuntu 24.04 runner."
 grep -Eq '^[[:space:]]+timeout-minutes:[[:space:]]+5[[:space:]]*$' .github/workflows/verify.yml ||
   fail "Fast CI must stay capped at five minutes."
 grep -Eq '^[[:space:]]+run:[[:space:]]+make verify[[:space:]]*$' .github/workflows/verify.yml ||

@@ -69,6 +69,11 @@ Solid arrows are implemented runtime paths.
   `LiveSyncCoordinator`.
 - Manual, launch, foreground, rebuild, retry, observer, and app-refresh triggers
   feed that same state machine.
+- Anchored history reads observe task cancellation before and after each page,
+  before mapping each sample or deleted UUID, and between enabled metrics.
+  An in-flight HealthKit query finishes its callback before cancellation is
+  observed. Cancellation checks throw `CancellationError` before those batches
+  are staged or committed.
 - The UI distinguishes staged, uploaded, pending, and failed work.
 - A successful manifest upload advances the last-successful timestamp.
 

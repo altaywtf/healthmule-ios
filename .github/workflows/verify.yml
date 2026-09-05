@@ -17,7 +17,7 @@ concurrency:
 jobs:
   changes:
     name: Select compile lane
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
       compile: ${{ steps.filter.outputs.compile }}
@@ -50,7 +50,7 @@ jobs:
 
   verify:
     name: Verify
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
@@ -91,7 +91,7 @@ jobs:
     name: Compile app and Watch app
     needs: changes
     if: needs.changes.outputs.compile == 'true'
-    runs-on: blacksmith-6vcpu-macos-26
+    runs-on: macos-26
     timeout-minutes: 20
 
     steps:

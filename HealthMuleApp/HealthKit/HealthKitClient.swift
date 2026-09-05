@@ -412,15 +412,20 @@ actor HealthKitClient: HealthChangeTracking {
             end: nil,
             options: []
         )
-        let result = try await anchoredQuery(
-            sampleType: sampleType,
-            predicate: predicate,
-            anchor: previousAnchor
-        )
+        let result = try await anchoredQuery(anchor: previousAnchor) { cursor, limit in
+            try await self.anchoredPage(
+                sampleType: sampleType,
+                predicate: predicate,
+                anchor: cursor,
+                limit: limit
+            )
+        }
+        try Task.checkCancellation()
 
         var dates: Set<String> = []
         var sampleDates: [UUID: Set<String>] = [:]
         for sample in result.samples {
+            try Task.checkCancellation()
             let directlyAffectedDates = try dayBoundaryStore.dateKeys(
                 overlappingStart: sample.startDate,
                 end: sample.endDate,
@@ -436,6 +441,7 @@ actor HealthKitClient: HealthChangeTracking {
         }
         let deletedUUIDs = Set(result.deletedObjects.map(\.uuid))
         for uuid in deletedUUIDs {
+            try Task.checkCancellation()
             dates.formUnion(
                 try HealthChangeDateMapper.reconciliationDates(
                     for: metric,
@@ -608,10 +614,13 @@ actor HealthKitClient: HealthChangeTracking {
         )
     }
 
-    private func anchoredQuery(
-        sampleType: HKSampleType,
-        predicate: NSPredicate,
-        anchor: HKQueryAnchor?
+    func anchoredQuery(
+        anchor: HKQueryAnchor?,
+        fetchPage: (HKQueryAnchor?, Int) async throws -> (
+            samples: [HKSample],
+            deletedObjects: [HKDeletedObject],
+            anchor: HKQueryAnchor
+        )
     ) async throws -> (
         samples: [HKSample],
         deletedObjects: [HKDeletedObject],
@@ -623,12 +632,9 @@ actor HealthKitClient: HealthChangeTracking {
         var allDeletedObjects: [HKDeletedObject] = []
 
         while true {
-            let page = try await anchoredPage(
-                sampleType: sampleType,
-                predicate: predicate,
-                anchor: cursor,
-                limit: pageLimit
-            )
+            try Task.checkCancellation()
+            let page = try await fetchPage(cursor, pageLimit)
+            try Task.checkCancellation()
             allSamples.append(contentsOf: page.samples)
             allDeletedObjects.append(contentsOf: page.deletedObjects)
             cursor = page.anchor

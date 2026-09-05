@@ -425,6 +425,7 @@ actor HealthKitClient: HealthChangeTracking {
         var dates: Set<String> = []
         var sampleDates: [UUID: Set<String>] = [:]
         for sample in result.samples {
+            try Task.checkCancellation()
             let directlyAffectedDates = try dayBoundaryStore.dateKeys(
                 overlappingStart: sample.startDate,
                 end: sample.endDate,
@@ -440,6 +441,7 @@ actor HealthKitClient: HealthChangeTracking {
         }
         let deletedUUIDs = Set(result.deletedObjects.map(\.uuid))
         for uuid in deletedUUIDs {
+            try Task.checkCancellation()
             dates.formUnion(
                 try HealthChangeDateMapper.reconciliationDates(
                     for: metric,

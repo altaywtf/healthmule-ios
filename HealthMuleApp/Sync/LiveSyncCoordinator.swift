@@ -161,11 +161,13 @@ actor LiveSyncCoordinator {
 
         if trigger != .rebuild {
             for metric in HealthMetric.allCases where enabledMetrics.contains(metric) {
+                try Task.checkCancellation()
                 let batch = try await healthKit.changedDates(
                     for: metric,
                     calendar: syncCalendar,
                     notBefore: backfillStartInstant
                 )
+                try Task.checkCancellation()
                 batches.append(batch)
                 let changedDates = try localDates(from: batch.affectedDates)
                 dates.formUnion(

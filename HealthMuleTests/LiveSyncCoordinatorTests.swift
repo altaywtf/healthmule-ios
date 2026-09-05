@@ -484,6 +484,45 @@ final class LiveSyncCoordinatorTests: XCTestCase {
         )
     }
 
+    func testCancellationAfterMetricReturnStopsQueriesBeforeStagingOrAnchorCommit() async throws {
+        let fixture = try CoordinatorFixture()
+        defer { fixture.cleanUp() }
+        let health = CoordinatorHealthChanges(
+            startDate: fixture.startInstant,
+            blockFirstChange: true
+        )
+        let progressLog = SyncProgressLog()
+        let coordinator = try fixture.makeCoordinator(
+            health: health,
+            provider: CoordinatorRecordProvider(records: fixture.records)
+        )
+        let backfillStart = fixture.dates[0]
+        let task = Task {
+            try await coordinator.reconcile(
+                trigger: .manual,
+                enabledMetrics: [.stepCount, .vo2Max],
+                backfillStart: backfillStart,
+                progress: { await progressLog.append($0) }
+            )
+        }
+
+        await health.waitUntilFirstChangeStarts()
+        task.cancel()
+        await health.releaseFirstChange()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation.")
+        } catch is CancellationError {}
+        let changed = await health.changedMetrics()
+        let committed = await health.committedMetrics()
+        let progress = await progressLog.snapshot()
+        XCTAssertEqual(changed.count, 1)
+        XCTAssertTrue(committed.isEmpty)
+        XCTAssertTrue(progress.isEmpty)
+        XCTAssertNil(fixture.defaults.stringArray(forKey: "sync.lastStagedMetrics"))
+    }
+
     func testCancellationDoesNotCompleteBlockedDay() async throws {
         let fixture = try CoordinatorFixture(dayCount: 3)
         defer { fixture.cleanUp() }

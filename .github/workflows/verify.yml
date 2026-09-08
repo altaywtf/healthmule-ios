@@ -123,3 +123,25 @@ jobs:
       # iOS app and the embedded Watch app.
       - name: Build unsigned app and Watch app
         run: make build
+
+  result:
+    name: Required verification
+    needs: [changes, verify, compile]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require selected verification
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          COMPILE_SELECTED: ${{ needs.changes.outputs.compile }}
+          COMPILE_RESULT: ${{ needs.compile.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          test "$VERIFY_RESULT" = success
+          case "$COMPILE_SELECTED:$COMPILE_RESULT" in
+            true:success|false:skipped) ;;
+            *) exit 1 ;;
+          esac

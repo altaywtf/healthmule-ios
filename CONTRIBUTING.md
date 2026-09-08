@@ -76,3 +76,11 @@ HealthKit, Google, background-delivery, and Watch changes may also need the
   with risks, verification evidence, and complexity impact.
 - Add a sanitized review aid, such as a screenshot or recording, when it
   explains the change faster than prose.
+
+## Dependency automerge
+
+- Eligible Renovate updates use GitHub auto-merge after required checks: Required verification and Scan Git history.
+- Checks are non-strict; repository admins retain direct writes through
+  a bypass limited to the check ruleset. Renovate has no bypass.
+- Shared release-age and major/digest rules remain unchanged. Add new voting
+  checks to the ruleset; workflow presence alone does not require them.

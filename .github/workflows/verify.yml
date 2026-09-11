@@ -48,8 +48,8 @@ jobs:
               - 'project.yml'
               - 'scripts/**'
 
-  verify:
-    name: Verify
+  swift:
+    name: Swift verification
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -124,9 +124,8 @@ jobs:
       - name: Build unsigned app and Watch app
         run: make build
 
-  result:
-    name: Required verification
-    needs: [changes, verify, compile]
+  verify:
+    needs: [changes, swift, compile]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -135,7 +134,7 @@ jobs:
       - name: Require selected verification
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
-          VERIFY_RESULT: ${{ needs.verify.result }}
+          VERIFY_RESULT: ${{ needs.swift.result }}
           COMPILE_SELECTED: ${{ needs.changes.outputs.compile }}
           COMPILE_RESULT: ${{ needs.compile.result }}
         run: |

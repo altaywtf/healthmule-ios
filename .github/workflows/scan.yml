@@ -1,0 +1,21 @@
+name: Scan
+
+# No push trigger: pull requests scan the same tree before merge and the
+# weekly schedule covers history.
+on:
+  pull_request:
+  schedule:
+    - cron: "17 7 * * 4"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    permissions:
+      contents: read
+    uses: uinaf/.github/.github/workflows/scan.yml@01d0c3a72890955818d3826d7d3e15f6992f8600 # main

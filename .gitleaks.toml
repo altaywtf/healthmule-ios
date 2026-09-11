@@ -1,0 +1,9 @@
+# PEM header literals in a validator; no live credentials.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "TestFlight configuration validator asserts on PEM header strings"
+paths = [
+  '''scripts/ci/validate-testflight-configuration\.sh''',
+]

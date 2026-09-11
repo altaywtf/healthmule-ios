@@ -79,7 +79,9 @@ HealthKit, Google, background-delivery, and Watch changes may also need the
 
 ## Dependency automerge
 
-- Eligible Renovate updates use GitHub auto-merge after required checks: Required verification and Scan Git history.
+- Eligible Renovate updates use GitHub auto-merge after required checks:
+  `verify`, `scan / Actionlint`, `scan / Gitleaks`, `scan / TruffleHog`, and
+  `scan / Zizmor`.
 - Checks are non-strict; repository admins retain direct writes through
   a bypass limited to the check ruleset. Renovate has no bypass.
 - Shared release-age and major/digest rules remain unchanged. Add new voting

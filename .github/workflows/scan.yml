@@ -18,4 +18,4 @@ jobs:
   scan:
     permissions:
       contents: read
-    uses: uinaf/.github/.github/workflows/scan.yml@01d0c3a72890955818d3826d7d3e15f6992f8600 # main
+    uses: uinaf/.github/.github/workflows/scan.yml@main

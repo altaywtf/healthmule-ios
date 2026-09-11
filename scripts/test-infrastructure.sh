@@ -325,19 +325,16 @@ for workflow in \
   .github/workflows/verify.yml \
   .github/workflows/full-verify.yml \
   .github/workflows/testflight.yml \
-  .github/workflows/dependency-watch.yml \
-  .github/workflows/secret-scanning.yml; do
+  .github/workflows/dependency-watch.yml; do
   grep -Fq "uses: ${checkout_action}" "${workflow}" ||
     fail "${workflow} must pin the supported Node 24 checkout action."
 done
-secret_scanning_workflow=.github/workflows/secret-scanning.yml
-grep -Fq 'uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11' "${secret_scanning_workflow}" ||
-  fail "Secret scanning must pin the reviewed TruffleHog release."
-grep -Eq '^[[:space:]]+fetch-depth:[[:space:]]+0[[:space:]]*$' "${secret_scanning_workflow}" ||
-  fail "Secret scanning must check out the complete repository history."
-for trigger in pull_request push schedule workflow_dispatch; do
-  grep -Eq "^  ${trigger}:" "${secret_scanning_workflow}" ||
-    fail "Secret scanning must include the ${trigger} trigger."
+scan_workflow=.github/workflows/scan.yml
+grep -Eq '^    uses: uinaf/\.github/\.github/workflows/scan\.yml@[0-9a-f]{40}( |$)' "${scan_workflow}" ||
+  fail "Scanning must call the shared workflow pinned to a commit."
+for trigger in pull_request schedule workflow_dispatch; do
+  grep -Eq "^  ${trigger}:" "${scan_workflow}" ||
+    fail "Scanning must include the ${trigger} trigger."
 done
 grep -Fq "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9" .github/workflows/verify.yml ||
   fail "Fast CI must pin the Swift build cache action."

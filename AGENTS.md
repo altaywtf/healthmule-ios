@@ -74,3 +74,10 @@ What the gates prove:
   committed.
 - Simulator fixtures are development proof only. HealthKit background delivery
   and real Drive uploads require the physical-device checklist in the docs.
+
+## Repository skills
+
+- Use [Swift concurrency](.agents/skills/swift-concurrency/SKILL.md) for tasks, actor isolation, Sendable, and callback-to-async changes.
+- Use [SwiftUI](.agents/skills/swiftui-expert-skill/SKILL.md) for view, state, layout, and accessibility changes.
+- Use [Swift testing](.agents/skills/swift-testing-expert/SKILL.md) for test architecture and async test failures; preserve the existing test framework unless migration is requested.
+- Use [Xcode build optimization](.agents/skills/xcode-build-orchestrator/SKILL.md) for build timing and optimization work; its five companion skills are installed alongside it. Keep `project.yml` as the project source and use the repository build commands.

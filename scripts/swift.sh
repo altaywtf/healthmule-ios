@@ -8,8 +8,8 @@ if [[ "${swift_tool}" != "swift" && "${swift_tool}" != "swiftc" ]]; then
 fi
 
 swift_command=()
-if command -v xcodebuild >/dev/null 2>&1 && xcodebuild -version >/dev/null 2>&1; then
-  developer_dir="$(xcode-select -p)"
+if [[ -x /usr/bin/xcodebuild ]] && /usr/bin/xcodebuild -version >/dev/null 2>&1; then
+  developer_dir="$(/usr/bin/xcode-select -p)"
 else
   developer_dir=""
   for xcode_app in /Applications/Xcode.app /Applications/Xcode-*.app; do
@@ -23,7 +23,7 @@ fi
 
 if [[ -n "${developer_dir}" ]]; then
   export DEVELOPER_DIR="${developer_dir}"
-  swift_command=(xcrun "${swift_tool}")
+  swift_command=(/usr/bin/xcrun "${swift_tool}")
 elif command -v "${swift_tool}" >/dev/null 2>&1; then
   swift_command=("${swift_tool}")
 else

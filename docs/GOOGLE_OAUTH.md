@@ -128,6 +128,8 @@ can start reconciliation or manual sync.
 - A cached folder is accepted only when Drive reports a non-trashed folder MIME
   type.
 - The cached `daily` folder must also remain a child of the verified root.
+- Folder discovery runs during Drive setup. Artifact uploads use the activated
+  folder IDs and do not re-fetch those folders per file.
 - Deleted, trashed, or incoherent folder trees are recreated, stale per-file IDs
   are discarded atomically, and the new tree receives a full local republish.
 

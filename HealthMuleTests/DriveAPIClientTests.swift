@@ -804,12 +804,9 @@ final class DriveAPIClientTests: XCTestCase {
     }
 
     @MainActor
-    func testActiveDestinationChangeStopsPartialUploadToReplacementTree()
-        async throws
-    {
+    func testArtifactUpsertDoesNotRefetchActivatedFolders() async throws {
         let suiteName = "DriveAPIClientTests.\(UUID().uuidString)"
         let accountID = "google-user-a"
-        let uploadAttempts = RequestCounter()
         defer {
             UserDefaults(suiteName: suiteName)?
                 .removePersistentDomain(forName: suiteName)
@@ -817,109 +814,96 @@ final class DriveAPIClientTests: XCTestCase {
         }
 
         let metadataStore = try Self.makeMetadataStore(suiteName: suiteName)
-        await metadataStore.setRootID("old-root", for: accountID)
-        await metadataStore.setDailyID("old-daily", for: accountID)
-        await metadataStore.commitFolders(
-            rootID: "old-root",
-            dailyID: "old-daily",
-            for: accountID
+        await metadataStore.setFileID(
+            "manifest-a",
+            for: "manifest",
+            accountID: accountID
         )
+        await metadataStore.setFileID(
+            "day-a",
+            for: "daily:2026-07-23",
+            accountID: accountID
+        )
+        let folderGets = StringRecorder()
 
         URLProtocolStub.setHandler { request in
-            if request.url?.path.hasPrefix("/upload/") == true {
-                _ = uploadAttempts.next()
-                throw StubError.unexpectedRequest("upload must not start")
+            let path = request.url?.path ?? ""
+            if
+                path == "/drive/v3/files/root-a"
+                    || path == "/drive/v3/files/daily-a"
+            {
+                folderGets.append(path)
+                throw StubError.unexpectedRequest(path)
             }
-            switch request.url?.path {
-            case "/drive/v3/files/old-root":
-                return try Self.response(
-                    for: request,
-                    json: [
-                        "id": "old-root",
-                        "name": "Old Archive",
-                        "mimeType": "application/vnd.google-apps.folder",
-                        "trashed": true,
-                    ]
-                )
-            case "/drive/v3/files/old-daily":
-                return try Self.response(
-                    for: request,
-                    json: [
-                        "id": "old-daily",
-                        "name": "daily",
-                        "mimeType": "application/vnd.google-apps.folder",
+            if request.httpMethod == "GET" {
+                let fileID = path.split(separator: "/").last.map(String.init)
+                let item: [String: Any]
+                switch fileID {
+                case "manifest-a":
+                    item = [
+                        "id": "manifest-a",
+                        "name": "manifest.json",
+                        "mimeType": "application/json",
                         "trashed": false,
-                        "parents": ["old-root"],
+                        "parents": ["root-a"],
+                        "appProperties": [
+                            "healthMuleKind": "manifest"
+                        ],
                     ]
-                )
-            case "/drive/v3/files":
-                let query = (
-                    request.url?.query?.removingPercentEncoding
-                ) ?? ""
-                if query.contains("daily-folder") {
-                    return try Self.response(
-                        for: request,
-                        json: [
-                            "files": [[
-                                "id": "new-daily",
-                                "name": "daily",
-                                "mimeType": "application/vnd.google-apps.folder",
-                                "trashed": false,
-                                "parents": ["new-root"],
-                            ]]
-                        ]
+                case "day-a":
+                    item = [
+                        "id": "day-a",
+                        "name": "2026-07-23.json",
+                        "mimeType": "application/json",
+                        "trashed": false,
+                        "parents": ["daily-a"],
+                        "appProperties": [
+                            "healthMuleKind": "daily",
+                            "healthMuleDate": "2026-07-23",
+                        ],
+                    ]
+                default:
+                    throw StubError.unexpectedRequest(
+                        request.url?.absoluteString ?? "nil"
                     )
                 }
-                return try Self.response(
-                    for: request,
-                    json: [
-                        "files": [[
-                            "id": "new-root",
-                            "name": "Replacement Archive",
-                            "mimeType": "application/vnd.google-apps.folder",
-                            "trashed": false,
-                            "parents": ["archive-parent"],
-                        ]]
-                    ]
-                )
-            default:
-                throw StubError.unexpectedRequest(
-                    request.url?.absoluteString ?? "nil"
-                )
+                return try Self.response(for: request, json: item)
             }
+            return try Self.response(
+                for: request,
+                json: [
+                    "id": path.split(separator: "/").last.map(String.init)
+                        ?? "unknown"
+                ]
+            )
         }
 
         let client = Self.makeClient(metadataStore: metadataStore)
         try await client.activateAccount(
             accountID,
             folders: DriveFolderConnection(
-                rootID: "old-root",
-                dailyID: "old-daily",
-                name: "Old Archive"
+                rootID: "root-a",
+                dailyID: "daily-a",
+                name: "Archive A"
             )
         )
         let destination = DriveArtifactDestination(driveClient: client)
-        let artifact = ExportArtifact(
-            id: .manifest,
-            revision: 1,
-            contents: Data("{}".utf8)
+        try await destination.upsert(
+            ExportArtifact(
+                id: .manifest,
+                revision: 1,
+                contents: Data("{}".utf8)
+            )
+        )
+        try await destination.upsert(
+            ExportArtifact(
+                id: .daily(try LocalDate(rawValue: "2026-07-23")),
+                revision: 1,
+                contents: Data("{}".utf8)
+            )
         )
 
-        do {
-            try await destination.upsert(artifact)
-            XCTFail("Expected the changed destination to stop the upload")
-        } catch let error as ExportDestinationError {
-            XCTAssertEqual(
-                error,
-                .transient(code: "drive_destination_changed")
-            )
-        }
-        let folders = await metadataStore.folders(for: accountID)
-        XCTAssertEqual(
-            folders,
-            DriveFolderSet(rootID: "new-root", dailyID: "new-daily")
-        )
-        XCTAssertEqual(uploadAttempts.count, 0)
+        XCTAssertEqual(folderGets.values, [])
     }
 
     @MainActor

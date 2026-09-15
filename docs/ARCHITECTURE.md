@@ -352,7 +352,9 @@ and Sync surfaces report a blocking storage error.
 - immutable Drive file and folder IDs cached per Google account by
   `DriveMetadataStore`;
 - folder validation by MIME type and trash state, plus a present My Drive
-  parent for a rediscovered root and the `daily` folder's exact root parent;
+  parent for a rediscovered root and the `daily` folder's exact root parent.
+  That validation runs when folders are discovered or recovered, not on every
+  artifact upsert; uploads use the folder IDs from the current activation.
 - private `appProperties` named `healthMuleKind` and `healthMuleDate`;
 - Drive-generated IDs supplied on create, making an ambiguous retry resolve as
   either a successful create or `409 Conflict`;

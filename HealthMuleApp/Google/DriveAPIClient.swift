@@ -166,7 +166,7 @@ actor DriveAPIClient {
     }
 
     private var activeAccountID: String?
-    private var activeFolderIdentity: DriveFolderIdentity?
+    private var activeFolderConnection: DriveFolderConnection?
     private var activeDestinationScopeID: String?
     private var activationGeneration: UInt64 = 0
     private var didLogManagedFolders = false
@@ -176,6 +176,10 @@ actor DriveAPIClient {
         subsystem: Bundle.main.bundleIdentifier ?? "dev.uinaf.healthmule",
         category: "drive"
     )
+
+    private var activeFolderIdentity: DriveFolderIdentity? {
+        activeFolderConnection.map(DriveFolderIdentity.init)
+    }
 
     init(
         tokenProvider: @escaping TokenProvider,
@@ -211,7 +215,7 @@ actor DriveAPIClient {
         }
         try Task.checkCancellation()
         activeAccountID = accountID
-        activeFolderIdentity = DriveFolderIdentity(folders)
+        activeFolderConnection = folders
         activeDestinationScopeID = destinationScopeID
         return DriveAccountActivation(
             accountID: accountID,
@@ -328,28 +332,11 @@ actor DriveAPIClient {
         )
     }
 
-    func ensureAppFoldersForActiveAccount() async throws
-        -> DriveFolderConnection
-    {
-        guard
-            let accountID = activeAccountID,
-            let expectedFolders = activeFolderIdentity
-        else {
+    func ensureAppFoldersForActiveAccount() throws -> DriveFolderConnection {
+        guard let folders = activeFolderConnection else {
             throw DriveAPIError.accountNotReady
         }
-        let expectedGeneration = activationGeneration
-        let verifiedFolders = try await ensureAppFolders(for: accountID)
-        guard
-            activeAccountID == accountID,
-            activeFolderIdentity == expectedFolders,
-            activationGeneration == expectedGeneration
-        else {
-            throw DriveAPIError.accountNotReady
-        }
-        guard DriveFolderIdentity(verifiedFolders) == expectedFolders else {
-            throw DriveAPIError.destinationChanged
-        }
-        return verifiedFolders
+        return folders
     }
 
     @discardableResult
@@ -363,7 +350,7 @@ actor DriveAPIClient {
         try Task.checkCancellation()
         guard
             let accountID = activeAccountID,
-            let activeFolderIdentity,
+            let activeFolderIdentity = activeFolderIdentity,
             let destinationScopeID = activeDestinationScopeID
         else {
             throw DriveAPIError.accountNotReady
@@ -1225,7 +1212,7 @@ actor DriveAPIClient {
 
     private func clearActiveDestination() {
         activeAccountID = nil
-        activeFolderIdentity = nil
+        activeFolderConnection = nil
         activeDestinationScopeID = nil
     }
 

@@ -571,6 +571,10 @@ struct BackgroundDriveUploadBodyStore: Sendable {
             ],
             ofItemAtPath: fileURL.path
         )
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableURL = fileURL
+        try mutableURL.setResourceValues(resourceValues)
         return fileURL
     }
 

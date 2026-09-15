@@ -11,6 +11,9 @@
 The current schema remains the production format. This decision requires a
 separate reviewed migration plan; it does not authorize a schema change.
 
+Follow-up (draft, not production-authorized):
+[FileSyncStore v2 migration design](sync-store-v2-migration.md).
+
 ## Command
 
 ```sh

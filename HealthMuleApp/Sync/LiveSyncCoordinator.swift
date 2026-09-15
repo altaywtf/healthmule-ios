@@ -417,6 +417,7 @@ actor LiveSyncCoordinator {
         for (index, date) in sortedDates.enumerated() {
             try Task.checkCancellation()
             let record = try await recordProvider.record(for: date)
+            try Task.checkCancellation()
             switch try await runtime.store.stageDaily(record) {
             case .staged:
                 report.stagedDailyCount += 1

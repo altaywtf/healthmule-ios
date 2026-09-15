@@ -27,13 +27,13 @@ The privacy boundaries in Repo rules are non-negotiable.
 - Always call the `scripts/` wrappers instead of bare `swift`, `xcodebuild`, or
   `xcrun`. They locate `/Applications/Xcode*.app` themselves, so `make verify`
   and `make build` work even when `xcode-select` points at CommandLineTools.
-- `make test`, `make smoke`, and `make run` get no such fallback. They need
+- `make test`, `make smoke`, `make harness`, and `make run` get no such fallback. They need
   `xcode-select` pointed at a full Xcode.
 - `xcrun simctl` and every tool that resolves Xcode through `xcode-select`,
   the Claude Code iOS Simulator MCP included, fail until an operator runs
   `sudo xcode-select -s /Applications/Xcode.app`. Use `./scripts/xcrun.sh`
   meanwhile.
-- `make test`, `make smoke`, and `make verify-full` boot a cold target and wait
+- `make test`, `make smoke`, `make harness`, and `make verify-full` boot a cold target and wait
   for it before testing. They shut it down on exit only when that invocation
   booted it; an already-booted Simulator remains running. This avoids the
   `SBMainWorkspace ... Busy` launch race without leaking a headless Simulator.

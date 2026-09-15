@@ -28,16 +28,19 @@ actor DriveMetadataStore {
 
     private static let stateKeyPrefix = "drive.metadata.v2"
 
+    private let directoryURL: URL?
     private let defaults: UserDefaults
     private let successfulConditionalWriteBarrier:
         (@Sendable () async -> Void)?
     private var states: [String: State] = [:]
 
     init(
+        directoryURL: URL? = nil,
         defaults: UserDefaults = .standard,
         successfulConditionalWriteBarrier:
             (@Sendable () async -> Void)? = nil
     ) {
+        self.directoryURL = directoryURL
         self.defaults = defaults
         self.successfulConditionalWriteBarrier =
             successfulConditionalWriteBarrier
@@ -221,14 +224,19 @@ actor DriveMetadataStore {
         if let state = states[key] {
             return state
         }
-        let state: State
+        if let fileState = loadFileState(for: key) {
+            states[key] = fileState
+            defaults.removeObject(forKey: key)
+            return fileState
+        }
         if let data = defaults.data(forKey: key),
            let decoded = try? JSONDecoder().decode(State.self, from: data)
         {
-            state = decoded
-        } else {
-            state = State()
+            states[key] = decoded
+            persist(decoded, for: accountID)
+            return decoded
         }
+        let state = State()
         states[key] = state
         return state
     }
@@ -237,7 +245,61 @@ actor DriveMetadataStore {
         let key = Self.stateKey(for: accountID)
         states[key] = state
         guard let data = try? JSONEncoder().encode(state) else { return }
+        if let directoryURL {
+            do {
+                try prepareDirectory(directoryURL)
+                try protectedAtomicWrite(
+                    data,
+                    to: directoryURL.appendingPathComponent("\(key).json")
+                )
+                defaults.removeObject(forKey: key)
+            } catch {
+                return
+            }
+            return
+        }
         defaults.set(data, forKey: key)
+    }
+
+    private func loadFileState(for key: String) -> State? {
+        guard let directoryURL else { return nil }
+        let url = directoryURL.appendingPathComponent("\(key).json")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        guard
+            let data = try? Data(contentsOf: url),
+            let decoded = try? JSONDecoder().decode(State.self, from: data)
+        else {
+            return nil
+        }
+        return decoded
+    }
+
+    private func prepareDirectory(_ directory: URL) throws {
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [
+                .protectionKey:
+                    FileProtectionType.completeUntilFirstUserAuthentication
+            ]
+        )
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableDirectory = directory
+        try mutableDirectory.setResourceValues(resourceValues)
+    }
+
+    private func protectedAtomicWrite(_ data: Data, to url: URL) throws {
+        try data.write(
+            to: url,
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        )
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableURL = url
+        try mutableURL.setResourceValues(resourceValues)
     }
 
     static func accountNamespace(for accountID: String) -> String {

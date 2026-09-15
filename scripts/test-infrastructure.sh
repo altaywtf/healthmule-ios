@@ -353,13 +353,14 @@ for compile_input in \
   "Sources/**" \
   "Package.swift" \
   "project.yml" \
-  "scripts/**"; do
+  "scripts/**" \
+  "HealthMule.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"; do
   grep -Fq -- "- '${compile_input}'" .github/workflows/verify.yml ||
     fail "The macOS compile selector must include ${compile_input}."
 done
 grep -Fq "id: xcode-toolchain" .github/workflows/verify.yml ||
   fail "The macOS compile lane must fingerprint its Xcode toolchain."
-grep -Fq "key: verify-xcode-dependencies-v3-" .github/workflows/verify.yml ||
+grep -Fq "key: verify-xcode-dependencies-v4-" .github/workflows/verify.yml ||
   fail "The macOS compile lane must keep a versioned dependency cache."
 for xcode_cache_path in \
   ".artifacts/toolchain" \

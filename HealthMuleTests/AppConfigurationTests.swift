@@ -6,6 +6,15 @@ import XCTest
 @testable import HealthMule
 
 final class AppConfigurationTests: XCTestCase {
+    func testReconcileOccupancyAdmitsOnceUntilReleased() {
+        var occupancy = ReconcileOccupancy()
+        XCTAssertTrue(occupancy.admit())
+        XCTAssertFalse(occupancy.admit())
+        occupancy.release()
+        XCTAssertTrue(occupancy.admit())
+        XCTAssertFalse(occupancy.admit())
+    }
+
     @MainActor
     func testColdBackgroundBootstrapKeepsBackgroundAttributionExactlyOnce() {
         XCTAssertEqual(

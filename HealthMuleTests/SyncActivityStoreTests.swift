@@ -141,22 +141,10 @@ final class SyncActivityStoreTests: XCTestCase {
         XCTAssertTrue(SyncActivityStoragePolicy.excludesFromBackup)
 
         let fileURL = activityFile(in: directory)
-        let attributes = try FileManager.default.attributesOfItem(
-            atPath: fileURL.path
-        )
-        let protection = try XCTUnwrap(
-            attributes[.protectionKey] as? FileProtectionType
-        )
-        XCTAssertEqual(
-            protection,
-            SyncActivityStoragePolicy.directoryProtection
-        )
-        let values = try fileURL.resourceValues(
-            forKeys: [.isExcludedFromBackupKey]
-        )
-        XCTAssertEqual(
-            values.isExcludedFromBackup,
-            SyncActivityStoragePolicy.excludesFromBackup
+        try PersistedStorageAssertions.assertProtectedAndExcludedFromBackup(
+            fileURL,
+            expectedProtection: SyncActivityStoragePolicy.directoryProtection,
+            excludesFromBackup: SyncActivityStoragePolicy.excludesFromBackup
         )
     }
 

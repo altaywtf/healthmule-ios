@@ -25,6 +25,7 @@ final class DriveAPIClientTests: XCTestCase {
             guard request.httpMethod == "GET" else {
                 throw StubError.unexpectedRequest(request.httpMethod ?? "nil")
             }
+            XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
 
             let item: [String: Any]
             switch request.url?.path {
@@ -366,6 +367,14 @@ final class DriveAPIClientTests: XCTestCase {
         let persistedDefaults = try XCTUnwrap(
             UserDefaults(suiteName: suiteName)
         )
+        let firstFileURL = Self.metadataFileURL(
+            suiteName: suiteName,
+            accountID: firstAccountID
+        )
+        let secondFileURL = Self.metadataFileURL(
+            suiteName: suiteName,
+            accountID: secondAccountID
+        )
 
         XCTAssertEqual(
             firstFolders,
@@ -376,12 +385,14 @@ final class DriveAPIClientTests: XCTestCase {
             DriveFolderSet(rootID: "root-b", dailyID: nil)
         )
         XCTAssertNil(secondFileID)
-        XCTAssertNotNil(
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstFileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondFileURL.path))
+        XCTAssertNil(
             persistedDefaults.data(
                 forKey: Self.metadataStateKey(for: firstAccountID)
             )
         )
-        XCTAssertNotNil(
+        XCTAssertNil(
             persistedDefaults.data(
                 forKey: Self.metadataStateKey(for: secondAccountID)
             )
@@ -549,6 +560,10 @@ final class DriveAPIClientTests: XCTestCase {
         XCTAssertNil(resetLegacySnapshot.status)
         XCTAssertNil(resetPendingSnapshot.fileID)
         XCTAssertNil(resetPendingSnapshot.status)
+        XCTAssertNil(
+            UserDefaults(suiteName: suiteName)?
+                .data(forKey: Self.metadataStateKey(for: accountID))
+        )
     }
 
     @MainActor
@@ -4131,10 +4146,32 @@ final class DriveAPIClientTests: XCTestCase {
         if let legacyData {
             defaults.set(legacyData, forKey: "drive.metadata.v1")
         }
+        let directory = metadataDirectory(for: suiteName)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
         return DriveMetadataStore(
+            directoryURL: directory,
             defaults: defaults,
             successfulConditionalWriteBarrier:
                 successfulConditionalWriteBarrier
+        )
+    }
+
+    private nonisolated static func metadataDirectory(for suiteName: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(
+            "healthmule-drive-metadata-\(suiteName)",
+            isDirectory: true
+        )
+    }
+
+    private nonisolated static func metadataFileURL(
+        suiteName: String,
+        accountID: String
+    ) -> URL {
+        metadataDirectory(for: suiteName).appendingPathComponent(
+            "\(metadataStateKey(for: accountID)).json"
         )
     }
 

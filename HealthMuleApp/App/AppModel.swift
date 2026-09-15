@@ -104,6 +104,7 @@ final class AppModel {
     private var healthRefreshEpoch: UInt64 = 0
     private var operationEpoch: UInt64 = 0
     private var selectionReconciliationQueue = SelectionReconciliationQueue()
+    private var reconcileOccupancy = ReconcileOccupancy()
     private var observerFlushQueue = ObserverFlushQueue()
     private var observerStagingFailurePending = false
     private var watchConnectivity: PhoneWatchConnectivityCoordinator?
@@ -211,14 +212,6 @@ final class AppModel {
         let isUITesting = ProcessInfo.processInfo.arguments.contains("--ui-testing")
         let configuration = GoogleOAuthConfiguration.bundled()
         let googleAuth = GoogleAuthService(configuration: configuration)
-        let metadataStore = DriveMetadataStore()
-        let driveClient = DriveAPIClient(
-            tokenProvider: { accountID in
-                try await googleAuth.accessToken(for: accountID)
-            },
-            metadataStore: metadataStore,
-            uploadTransport: BackgroundDriveUploadTransport.shared
-        )
         let healthKit = HealthKitClient()
         let diagnostics = DiagnosticsRecorder()
         let applicationSupportRoot = FileManager.default.urls(
@@ -231,6 +224,19 @@ final class AppModel {
         let stagingRoot = applicationSupportRoot.appendingPathComponent(
             "Staging",
             isDirectory: true
+        )
+        let metadataStore = DriveMetadataStore(
+            directoryURL: stagingRoot.appendingPathComponent(
+                "drive-metadata",
+                isDirectory: true
+            )
+        )
+        let driveClient = DriveAPIClient(
+            tokenProvider: { accountID in
+                try await googleAuth.accessToken(for: accountID)
+            },
+            metadataStore: metadataStore,
+            uploadTransport: BackgroundDriveUploadTransport.shared
         )
         let syncActivityStore = SyncActivityStore(
             directoryURL: applicationSupportRoot.appendingPathComponent(
@@ -777,7 +783,7 @@ final class AppModel {
     }
 
     func reconcile(trigger: SyncTrigger) async {
-        guard !operationState.isWorking else {
+        if operationState.isWorking || !reconcileOccupancy.admit() {
             selectionReconciliationQueue.enqueue(trigger)
             let activityID = await beginSyncActivity(trigger: trigger)
             await finishSyncActivity(
@@ -787,6 +793,7 @@ final class AppModel {
             )
             return
         }
+        defer { reconcileOccupancy.release() }
 
         var nextTrigger = trigger
         while true {

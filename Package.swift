@@ -2,6 +2,10 @@
 
 import PackageDescription
 
+private let upcomingConcurrencySettings: [SwiftSetting] = [
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+]
+
 let package = Package(
     name: "HealthMuleCore",
     platforms: [
@@ -23,23 +27,28 @@ let package = Package(
     targets: [
         .target(
             name: "HealthMuleCore",
-            path: "Sources/HealthMuleCore"
+            path: "Sources/HealthMuleCore",
+            swiftSettings: upcomingConcurrencySettings
         ),
         .target(
             name: "HealthMuleCompanion",
-            path: "HealthMuleShared"
+            path: "HealthMuleShared",
+            swiftSettings: upcomingConcurrencySettings
         ),
         .executableTarget(
             name: "SyncStoreBenchmark",
             dependencies: ["HealthMuleCore"],
-            path: "Benchmarks/SyncStoreBenchmark"
+            path: "Benchmarks/SyncStoreBenchmark",
+            swiftSettings: upcomingConcurrencySettings
         ),
         .testTarget(
             name: "HealthMuleCoreTests",
             dependencies: ["HealthMuleCore", "HealthMuleCompanion"],
             path: "Tests",
             sources: ["HealthMuleCoreTests"],
-            resources: [.copy("Fixtures")]
+            resources: [.copy("Fixtures")],
+            swiftSettings: upcomingConcurrencySettings
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

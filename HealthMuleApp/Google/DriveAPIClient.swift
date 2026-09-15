@@ -157,6 +157,14 @@ actor DriveAPIClient {
     private let metadataStore: DriveMetadataStore
     private let session: URLSession
     private let uploadTransport: any DriveUploadTransport
+
+    nonisolated static func makeMetadataSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
+    }
+
     private var activeAccountID: String?
     private var activeFolderIdentity: DriveFolderIdentity?
     private var activeDestinationScopeID: String?
@@ -172,7 +180,7 @@ actor DriveAPIClient {
     init(
         tokenProvider: @escaping TokenProvider,
         metadataStore: DriveMetadataStore,
-        session: URLSession = .shared,
+        session: URLSession = DriveAPIClient.makeMetadataSession(),
         uploadTransport: any DriveUploadTransport
     ) {
         self.tokenProvider = tokenProvider
@@ -1104,6 +1112,7 @@ actor DriveAPIClient {
             request.httpMethod = method
             request.httpBody = body
             request.timeoutInterval = 30
+            request.cachePolicy = .reloadIgnoringLocalCacheData
             request.setValue(
                 "Bearer \(token)",
                 forHTTPHeaderField: "Authorization"

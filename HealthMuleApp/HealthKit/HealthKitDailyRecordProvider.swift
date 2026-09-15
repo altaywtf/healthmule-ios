@@ -230,25 +230,24 @@ private extension HealthKitClient {
             end: end,
             options: options
         )
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsQuery(
+        return try await executeCancellableQuery { resume in
+            HKStatisticsQuery(
                 quantityType: type,
                 quantitySamplePredicate: predicate,
                 options: [.cumulativeSum]
             ) { _, statistics, error in
                 do {
                     let value = statistics?.sumQuantity()?.doubleValue(for: unit)
-                    continuation.resume(
+                    resume.resume(
                         returning: try HealthKitCumulativeResult.resolve(
                             value,
                             error: error
                         )
                     )
                 } catch {
-                    continuation.resume(throwing: error)
+                    resume.resume(throwing: error)
                 }
             }
-            store.execute(query)
         }
     }
 
@@ -399,20 +398,19 @@ private extension HealthKitClient {
         type: HKSampleType,
         predicate: NSPredicate
     ) async throws -> [Sample] {
-        try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(
+        try await executeCancellableQuery { resume in
+            HKSampleQuery(
                 sampleType: type,
                 predicate: predicate,
                 limit: HKObjectQueryNoLimit,
                 sortDescriptors: nil
             ) { _, samples, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    resume.resume(throwing: error)
                     return
                 }
-                continuation.resume(returning: samples as? [Sample] ?? [])
+                resume.resume(returning: samples as? [Sample] ?? [])
             }
-            store.execute(query)
         }
     }
 

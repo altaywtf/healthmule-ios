@@ -53,7 +53,7 @@ Solid arrows are implemented runtime paths.
 | App shell | An adaptive SwiftUI tab shell keeps Home and Settings as permanent destinations. Setup, sync repair, and per-metric status are focused Home drill-ins, preserving the four required product screens without giving one-time workflows permanent tab weight. `AppModel` owns observable UI state and platform services. |
 | Schema | `HealthMuleCore` encodes explicit JSON `null` values, validates local dates and offset-bearing timestamps, preserves unknown fields, and emits canonical sorted JSON. |
 | Aggregation | Pure Swift inputs cover latest values, stable arithmetic means, asleep-interval unioning, workout de-duplication, derived totals, and deterministic source ordering. |
-| Durable sync | `SyncEngine` and `FileSyncStore` implement semantic no-op detection, artifact revisions, a persistent retry queue, manifest ordering, retry backoff, reauthorization blocking, and full republishing when the destination account or managed folder identity changes. |
+| Durable sync | `SyncEngine` and `FileSyncStore` implement semantic no-op detection, artifact revisions, a persistent retry queue, manifest ordering, retry backoff, reauthorization blocking, and full republishing when the destination account or managed folder identity changes. Production state remains schema v1; the draft v2 design is in [FileSyncStore v2 migration](decisions/sync-store-v2-migration.md). |
 | Reconciliation | `LiveSyncCoordinator` combines enabled-metric anchored deltas, a rolling three-day window, missing dates from the fixed selected backfill boundary, and existing dates that need metric-selection scrubbing. It stages each date before committing anchors. |
 | HealthKit | A dedicated `HealthKitClient` actor keeps queries, sample transformation, aggregation, and anchor/day-boundary persistence off the UI actor. The app requests read access only, tracks the authorization-request lifecycle without claiming to know individual read grants, distinguishes a failed status check from a completed request, reports last readable samples, registers observer queries, fetches anchored deltas, preserves original day boundaries, and builds daily records with HealthKit statistics and sample queries. |
 | Google | GoogleSignIn restores and refreshes credentials, distinguishing a revoked grant, an account change, and a temporary network failure. OAuth authorization and verified Drive readiness are separate states. Every token refresh and Drive request is bound to its expected stable account ID. `DriveArtifactDestination` maps core artifacts and retry classifications onto account-scoped folder discovery and stable-ID multipart upserts. |
@@ -71,9 +71,9 @@ Solid arrows are implemented runtime paths.
   feed that same state machine.
 - Anchored history reads observe task cancellation before and after each page,
   before mapping each sample or deleted UUID, and between enabled metrics.
-  An in-flight HealthKit query finishes its callback before cancellation is
-  observed. Cancellation checks throw `CancellationError` before those batches
-  are staged or committed.
+  In-flight HealthKit queries are stopped when the Swift task cancels, and
+  their continuations resume once. Cancellation checks throw `CancellationError`
+  before those batches are staged or committed.
 - The UI distinguishes staged, uploaded, pending, and failed work.
 - A successful manifest upload advances the last-successful timestamp.
 
@@ -522,18 +522,20 @@ matters architecturally is the boundary each gate actually proves.
   contract, a Swift parse of all app and iOS test sources, and the deterministic
   Foundation package tests.
 - Parsing is not type checking, so `make verify` alone never proves that the app
-  or the Watch app compiles. The `Verify` workflow pairs it with a macOS job
-  running `make build`, which type checks the iOS app and the embedded Watch app
-  on every pull request.
+  or the Watch app compiles. The `Verify` workflow pairs it with a path-filtered
+  macOS job running `make build`. Documentation-only and unrelated automation
+  changes skip that lane; app, Watch, project, package, or build-script
+  changes type-check the iOS app and the embedded Watch app.
 - `make verify-full` adds the iOS app and UI tests on an available Simulator. It
   runs locally or through the manual `Full Verify` and `Upload TestFlight`
   workflows, never on a pull request.
 - `make test`, `make smoke`, `make harness`, `make run`, and `make verify-full`
   (which runs the test task) require `xcode-select` to point at a full Xcode and
   fail early with that instruction otherwise.
-- `make harness` boots its selected Simulator. The other test tasks need the
-  target Simulator already booted; a cold device loses a launch race and reports
-  `SBMainWorkspace ... Busy` for every UI test.
+- `make test`, `make smoke`, `make harness`, and `make verify-full` boot a cold
+  target and wait for it. They shut it down on exit only when that invocation
+  booted it; an already-booted Simulator remains running. This avoids the
+  `SBMainWorkspace ... Busy` launch race without leaking a headless Simulator.
 
 Snapshot presentation, freshness, privacy, semantic publication, and request
 ordering are deterministic core tests. No gate proves HealthKit authorization,

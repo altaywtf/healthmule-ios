@@ -40,8 +40,8 @@ struct BackgroundDeliveryRegistrationSummary: Equatable, Sendable {
     }
 }
 
-// HealthKit's completion callback predates Sendable annotations but is
-// explicitly designed to be retained until observer processing finishes.
+// HealthKit's observer completion is @unchecked Sendable so the callback can
+// hop off the query queue. Call it once, before any staging work.
 private final class HealthObserverCompletion: @unchecked Sendable {
     private let callback: () -> Void
 
@@ -51,6 +51,80 @@ private final class HealthObserverCompletion: @unchecked Sendable {
 
     func callAsFunction() {
         callback()
+    }
+}
+
+// HKQuery callbacks and `HKHealthStore.stop` can race the Swift cancellation
+// handler. This box holds the query and resumes the continuation exactly once.
+final class HealthKitQueryResume<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, any Error>?
+    private var pending: Result<Value, any Error>?
+    private var query: HKQuery?
+    private var cancelled = false
+
+    func attach(_ continuation: CheckedContinuation<Value, any Error>) {
+        lock.lock()
+        if let pending {
+            self.pending = nil
+            query = nil
+            lock.unlock()
+            continuation.resume(with: pending)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func shouldStart() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return continuation != nil && !cancelled
+    }
+
+    func executeIfActive(_ query: HKQuery, on healthStore: HKHealthStore) {
+        lock.lock()
+        if cancelled {
+            lock.unlock()
+            return
+        }
+        self.query = query
+        healthStore.execute(query)
+        lock.unlock()
+    }
+
+    func stopIfNeeded(on healthStore: HKHealthStore) {
+        lock.lock()
+        cancelled = true
+        let query = self.query
+        lock.unlock()
+        if let query {
+            healthStore.stop(query)
+        }
+    }
+
+    func resume(returning value: Value) {
+        resume(with: .success(value))
+    }
+
+    func resume(throwing error: any Error) {
+        resume(with: .failure(error))
+    }
+
+    func resume(with result: Result<Value, any Error>) {
+        lock.lock()
+        query = nil
+        if let continuation {
+            self.continuation = nil
+            pending = nil
+            lock.unlock()
+            continuation.resume(with: result)
+            return
+        }
+        if pending == nil {
+            pending = result
+        }
+        lock.unlock()
     }
 }
 
@@ -189,6 +263,24 @@ actor HealthKitClient: HealthChangeTracking {
         )
         defaults = defaultsSuiteName.flatMap(UserDefaults.init(suiteName:))
             ?? .standard
+    }
+
+    func executeCancellableQuery<Value: Sendable>(
+        _ makeQuery: (HealthKitQueryResume<Value>) -> HKQuery
+    ) async throws -> Value {
+        let resume = HealthKitQueryResume<Value>()
+        let healthStore = store
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                resume.attach(continuation)
+                guard resume.shouldStart() else { return }
+                let query = makeQuery(resume)
+                resume.executeIfActive(query, on: healthStore)
+            }
+        } onCancel: {
+            resume.stopIfNeeded(on: healthStore)
+            resume.resume(throwing: CancellationError())
+        }
     }
 
     nonisolated var isAvailable: Bool {
@@ -362,14 +454,13 @@ actor HealthKitClient: HealthChangeTracking {
             let query = HKObserverQuery(
                 sampleType: sampleType,
                 predicate: nil
-            ) { [weak self] _, completion, _ in
+            ) { [weak self] _, completion, error in
                 let completion = HealthObserverCompletion(completion)
-                guard let self else {
-                    completion()
+                completion()
+                guard error == nil, let self else {
                     return
                 }
                 Task {
-                    defer { completion() }
                     await self.deliverObservation(metric)
                 }
             }
@@ -515,24 +606,23 @@ actor HealthKitClient: HealthChangeTracking {
         for metric: HealthMetric
     ) async throws -> Date? {
         guard let sampleType = metric.sampleType else { return nil }
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await executeCancellableQuery { resume in
             let sort = NSSortDescriptor(
                 key: HKSampleSortIdentifierEndDate,
                 ascending: false
             )
-            let query = HKSampleQuery(
+            return HKSampleQuery(
                 sampleType: sampleType,
                 predicate: nil,
                 limit: 1,
                 sortDescriptors: [sort]
             ) { _, samples, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    resume.resume(throwing: error)
                 } else {
-                    continuation.resume(returning: samples?.first?.endDate)
+                    resume.resume(returning: samples?.first?.endDate)
                 }
             }
-            store.execute(query)
         }
     }
 
@@ -658,22 +748,22 @@ actor HealthKitClient: HealthChangeTracking {
         deletedObjects: [HKDeletedObject],
         anchor: HKQueryAnchor
     ) {
-        try await withCheckedThrowingContinuation { continuation in
-            let query = HKAnchoredObjectQuery(
+        try await executeCancellableQuery { resume in
+            HKAnchoredObjectQuery(
                 type: sampleType,
                 predicate: predicate,
                 anchor: anchor,
                 limit: limit
             ) { _, samples, deletedObjects, newAnchor, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    resume.resume(throwing: error)
                     return
                 }
                 guard let newAnchor else {
-                    continuation.resume(throwing: HealthKitClientError.queryFailed)
+                    resume.resume(throwing: HealthKitClientError.queryFailed)
                     return
                 }
-                continuation.resume(
+                resume.resume(
                     returning: (
                         samples ?? [],
                         deletedObjects ?? [],
@@ -681,7 +771,6 @@ actor HealthKitClient: HealthChangeTracking {
                     )
                 )
             }
-            store.execute(query)
         }
     }
 

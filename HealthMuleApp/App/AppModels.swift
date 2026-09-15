@@ -159,6 +159,22 @@ struct SelectionReconciliationQueue: Equatable, Sendable {
     }
 }
 
+struct ReconcileOccupancy: Equatable, Sendable {
+    private(set) var occupied = false
+
+    mutating func admit() -> Bool {
+        if occupied {
+            return false
+        }
+        occupied = true
+        return true
+    }
+
+    mutating func release() {
+        occupied = false
+    }
+}
+
 struct ObserverFlushQueue: Equatable, Sendable {
     private(set) var isDraining = false
     private var hasPendingPass = false

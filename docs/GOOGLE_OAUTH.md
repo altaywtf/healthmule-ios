@@ -1,6 +1,6 @@
 # Google OAuth and Drive setup
 
-HealthMule uses GoogleSignIn 9.x for native iOS OAuth and calls Google Drive
+HealthMule uses GoogleSignIn 10.x for native iOS OAuth and calls Google Drive
 API v3 directly. It requests only:
 
 ```text

@@ -513,7 +513,7 @@ To update GoogleSignIn, edit its `exactVersion` in `project.yml`, then run:
 
 ```sh
 make project
-./scripts/with-xcode-lock.sh ./scripts/xcodebuild.sh -resolvePackageDependencies -project HealthMule.xcodeproj -scheme HealthMule
+./scripts/with-xcode-lock.sh ./scripts/xcodebuild.sh -resolvePackageDependencies -project HealthMule.xcodeproj -scheme HealthMule -derivedDataPath .artifacts/DerivedData
 ./scripts/check-app-dependencies.sh
 make verify-full
 ```

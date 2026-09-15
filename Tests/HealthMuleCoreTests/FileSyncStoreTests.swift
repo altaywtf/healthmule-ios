@@ -27,6 +27,48 @@ struct FileSyncStoreTests {
     }
 
     @Test
+    func dailyDateIndexDoesNotReadArtifactContents() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try FileSyncStore(rootDirectory: directory)
+        let record = try makeRecord()
+
+        _ = try await store.stageDaily(record)
+        try FileManager.default.removeItem(
+            at: directory.appendingPathComponent(
+                "daily/\(record.date.rawValue).json"
+            )
+        )
+
+        #expect(try await store.allDailyDates() == [record.date])
+        let cached = try await store.allDailyRecords()
+        #expect(cached.map(\.date) == [record.date])
+        #expect(cached.first?.metrics.steps == record.metrics.steps)
+    }
+
+    @Test
+    func recoverCachesDailyRecordsWithoutRereadingFiles() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = try FileSyncStore(rootDirectory: directory)
+        let record = try makeRecord()
+        _ = try await original.stageDaily(record)
+
+        let store = try FileSyncStore(rootDirectory: directory)
+        try await store.recover()
+        try FileManager.default.removeItem(
+            at: directory.appendingPathComponent(
+                "daily/\(record.date.rawValue).json"
+            )
+        )
+
+        #expect(try await store.allDailyDates() == [record.date])
+        let cached = try await store.allDailyRecords()
+        #expect(cached.map(\.date) == [record.date])
+        #expect(cached.first?.metrics.steps == record.metrics.steps)
+    }
+
+    @Test
     func unchangedSemanticRecordKeepsOriginalGeneratedAtAndRevision() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -21,6 +21,7 @@ public actor FileSyncStore {
     private let stateFile: URL
     private var state: PersistedState
     private var hasRecovered = false
+    private var dailyRecordsByDate: [LocalDate: DailyHealthRecord] = [:]
 
     public init(rootDirectory: URL) throws {
         self.rootDirectory = rootDirectory
@@ -81,6 +82,7 @@ public actor FileSyncStore {
                         )
                         invalidateManifest(in: &nextState)
                         try commitStagedArtifactState(nextState)
+                        rememberDailyRecord(prior)
                         return .staged(
                             id,
                             revision: recoveredRevision
@@ -100,6 +102,7 @@ public actor FileSyncStore {
                     )
                     invalidateManifest(in: &nextState)
                     try commitStagedArtifactState(nextState)
+                    rememberDailyRecord(prior)
                     return .staged(id, revision: 1)
                 }
                 let priorSemanticData =
@@ -142,6 +145,7 @@ public actor FileSyncStore {
         )
         invalidateManifest(in: &nextState)
         try commitStagedArtifactState(nextState)
+        rememberDailyRecord(record)
         return .staged(id, revision: nextRevision)
     }
 
@@ -467,18 +471,39 @@ public actor FileSyncStore {
         return state.retryQueue.contains { $0.artifactID.kind == .manifest }
     }
 
+    public func allDailyDates() throws -> Set<LocalDate> {
+        try ensureRecovered()
+        return Set(
+            state.artifacts.values.compactMap { artifact in
+                guard artifact.id.kind == .daily else {
+                    return nil
+                }
+                return artifact.id.date
+            }
+        )
+    }
+
     public func allDailyRecords() throws -> [DailyHealthRecord] {
         try ensureRecovered()
-        return try state.artifacts.values
+        if dailyRecordsByDate.count == dailyArtifactCount {
+            return dailyRecordsByDate.values.sorted { $0.date < $1.date }
+        }
+        let records = try state.artifacts.values
             .filter { $0.id.kind == .daily }
             .sorted { $0.id < $1.id }
-            .map { artifactState in
+            .map { artifactState -> DailyHealthRecord in
                 let url = artifactURL(for: artifactState.id)
                 guard FileManager.default.fileExists(atPath: url.path) else {
-                    throw FileSyncStoreError.missingArtifact(artifactState.id.relativePath)
+                    throw FileSyncStoreError.missingArtifact(
+                        artifactState.id.relativePath
+                    )
                 }
                 return try DailyHealthRecordCodec.decode(Data(contentsOf: url))
             }
+        dailyRecordsByDate = Dictionary(
+            uniqueKeysWithValues: records.map { ($0.date, $0) }
+        )
+        return records
     }
 
     public func artifactState(
@@ -512,6 +537,7 @@ public actor FileSyncStore {
         }
         var nextState = state
         var dailyChanged = false
+        var recoveredRecords: [LocalDate: DailyHealthRecord] = [:]
 
         let urls = try FileManager.default.contentsOfDirectory(
             at: dailyDirectory,
@@ -521,6 +547,7 @@ public actor FileSyncStore {
         for url in urls where url.pathExtension == "json" {
             let storedContents = try Data(contentsOf: url)
             let record = try DailyHealthRecordCodec.decode(storedContents)
+            recoveredRecords[record.date] = record
             let contents = try DailyHealthRecordCodec.encode(record)
             let id = ExportArtifactID.daily(record.date)
             let expectedName = "\(record.date.rawValue).json"
@@ -586,6 +613,7 @@ public actor FileSyncStore {
         }
 
         try commit(nextState)
+        dailyRecordsByDate = recoveredRecords
         hasRecovered = true
     }
 
@@ -734,8 +762,17 @@ public actor FileSyncStore {
             try commit(nextState)
         } catch {
             hasRecovered = false
+            dailyRecordsByDate = [:]
             throw error
         }
+    }
+
+    private var dailyArtifactCount: Int {
+        state.artifacts.values.count { $0.id.kind == .daily }
+    }
+
+    private func rememberDailyRecord(_ record: DailyHealthRecord) {
+        dailyRecordsByDate[record.date] = record
     }
 
     private func commit(_ nextState: PersistedState) throws {

@@ -350,11 +350,11 @@ actor LiveSyncCoordinator {
     }
 
     func summary() async throws -> SyncSummary {
-        let records = try await runtime.store.allDailyRecords()
+        let dates = try await runtime.store.allDailyDates()
         let retryItems = try await runtime.store.retryItems()
         return SyncSummary(
             lastSuccessfulSyncAt: lastSuccessfulSyncAt,
-            latestExportedDate: records.map(\.date).max()?.rawValue,
+            latestExportedDate: dates.max()?.rawValue,
             pendingUploadCount: retryItems.count,
             retryableUploadCount: retryItems.count {
                 $0.blockReason == nil
@@ -459,9 +459,7 @@ actor LiveSyncCoordinator {
         through endDate: Date,
         calendar: Calendar
     ) async throws -> Set<LocalDate> {
-        let existingDates = Set(
-            try await runtime.store.allDailyRecords().map(\.date)
-        )
+        let existingDates = try await runtime.store.allDailyDates()
         return try BackfillDatePlanner.missingDates(
             from: startDate,
             through: endDate,

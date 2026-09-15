@@ -155,10 +155,10 @@ public actor SyncEngine {
     }
 
     private func renderManifest() async throws -> ExportManifest? {
-        let records = try await store.allDailyRecords()
+        let dates = try await store.allDailyDates()
         guard
-            let earliest = records.map(\.date).min(),
-            let latest = records.map(\.date).max()
+            let earliest = dates.min(),
+            let latest = dates.max()
         else {
             return nil
         }
@@ -179,7 +179,7 @@ public actor SyncEngine {
             ),
             earliestDate: earliest,
             latestDate: latest,
-            recordCount: records.count
+            recordCount: dates.count
         )
     }
 

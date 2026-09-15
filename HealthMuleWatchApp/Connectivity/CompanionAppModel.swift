@@ -162,10 +162,21 @@ extension CompanionAppModel: WCSessionDelegate {
         _ session: WCSession,
         didReceiveApplicationContext applicationContext: [String: Any]
     ) {
+        receiveRemoteSnapshot(from: applicationContext)
+    }
+
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveUserInfo userInfo: [String: Any]
+    ) {
+        receiveRemoteSnapshot(from: userInfo)
+    }
+
+    nonisolated private func receiveRemoteSnapshot(
+        from payload: [String: Any]
+    ) {
         guard
-            let snapshot = try? CompanionPayloadCodec.snapshot(
-                from: applicationContext
-            )
+            let snapshot = try? CompanionPayloadCodec.snapshot(from: payload)
         else {
             return
         }

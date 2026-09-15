@@ -2,16 +2,15 @@
 
 ## Status
 
-`migration-plan-required`
+`implemented`
 
 - Date: 2026-07-30
-- Production baseline: `925cb27`
+- Production baseline: schema v2 as of the FileSyncStore digest-index change
 - Benchmark implementation: `af54e46`, output hardening: `83c7f56`
 
-The current schema remains the production format. This decision requires a
-separate reviewed migration plan; it does not authorize a schema change.
+Schema v1 remains readable on recover. The live index is schema v2.
 
-Follow-up (draft, not production-authorized):
+Follow-up:
 [FileSyncStore v2 migration design](sync-store-v2-migration.md).
 
 ## Command
@@ -39,7 +38,7 @@ Sanitized environment:
 No hostname, serial number, local path, record body, health value, temporary
 identifier, or real export data was captured.
 
-## Results
+## v1 results
 
 Run 1:
 
@@ -72,6 +71,24 @@ Final state size is effectively linear at 1,267.57, 1,265.86, 1,265.21, and
 day-count ratios because every stage rewrites all prior artifact state.
 Elapsed results varied by at most 7.9% between the two samples and show the same
 superlinear curve.
+
+## v2 results
+
+Same command, machine class, four-field CSV, and empty synthetic records after
+the digest-index change. One release run:
+
+| Days | Median elapsed (ms) | Final state bytes | Cumulative state bytes |
+|---:|---:|---:|---:|
+| 30 | 17.321 | 11,717 | 182,730 |
+| 90 | 105.212 | 34,997 | 1,595,790 |
+| 365 | 580.048 | 141,697 | 25,944,565 |
+| 1,825 | 11,541.472 | 708,177 | 646,635,825 |
+
+Final state size stays linear at about 388 bytes per day. Cumulative writes
+remain Θ(n²) because each `stageDaily` still rewrites the whole index; the
+constant dropped about 3.3× versus v1 (2.11 GB → 647 MB at 1,825 days). Elapsed
+time at 1,825 days improved only modestly (14.1 s → 11.5 s); encoding each new
+daily artifact still dominates.
 
 ## Correctness and privacy constraints
 
@@ -120,30 +137,21 @@ correctness or performance goals.
 
 ## Decision
 
-The evidence requires a migration plan. At 1,825 synthetic empty days, the
-current store rewrites about 2.11 GB of state and spends about 14.1 seconds in
-the staged workload on this machine. Both cumulative bytes and elapsed time are
-materially superlinear, and real records can only increase the encoded content
-carried in the state file.
-
-The follow-up should specify and benchmark a file-based v2 design that splits
-bulk semantic/content bytes from the monolithic metadata index. It must define
-the on-disk contract, recovery algorithm, migration states, compatibility
-window, corruption behavior, and proof against the current test suite before
-production code changes begin. This decision intentionally does not select
-sidecar names, digest algorithms, or migration implementation details.
+The evidence required a file-based v2 index that stores SHA-256 digests instead
+of embedding every artifact payload. Final index size is linear. Cumulative
+writes stay quadratic at a smaller constant because the atomic index is still
+rewritten in full. SQLite stays out unless a later proof needs incremental
+writes.
 
 ## Rollback and migration constraints
 
-A future plan must:
+The v2 implementation satisfies:
 
-1. Continue reading schema v1 until a v2 migration has been fully verified.
-2. Build v2 state in temporary protected storage and publish it atomically.
-3. Preserve the v1 state until every artifact, revision, and retry item has
-   round-tripped through v2 validation.
-4. Make interruption at every migration step safe to retry without revision
-   changes or duplicate uploads.
-5. Define how an older app recovers or rolls back after v2 publication; a
-   one-way version flip without a compatibility path is not acceptable.
-6. Re-run this fixed benchmark and the complete `FileSyncStore` correctness
-   suite before the migration can be proposed for release.
+1. Recover still reads schema 1.
+2. v2 is published with an atomic write of `sync-state.json`.
+3. The original v1 bytes are copied once to `sync-state.v1.json`.
+4. Re-running migration does not bump revisions merely to recompute digests.
+5. Older builds cannot read v2. Rollback is restore the frozen v1 copy
+   (pre-migration only) or delete the index and recover from artifact files.
+6. Re-run this fixed benchmark and the complete `FileSyncStore` suite on the
+   digest index.

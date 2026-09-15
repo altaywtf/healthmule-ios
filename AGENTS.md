@@ -17,7 +17,7 @@ The privacy boundaries in Repo rules are non-negotiable.
 | Connecting a real Drive account | [Google OAuth setup](docs/GOOGLE_OAUTH.md) |
 | What only a signed physical device can prove | [Physical-device acceptance](docs/DEVICE_TESTING.md) |
 | Shipping a build to testers | [TestFlight delivery](docs/DISTRIBUTION.md) |
-| Why the sync store needs a v2 migration plan | [Sync-store scaling decision](docs/decisions/sync-store-persistence.md) |
+| Why the sync store uses a digest index | [Sync-store scaling decision](docs/decisions/sync-store-persistence.md) |
 
 ## Runner contract
 

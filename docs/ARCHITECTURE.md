@@ -53,11 +53,11 @@ Solid arrows are implemented runtime paths.
 | App shell | An adaptive SwiftUI tab shell keeps Home and Settings as permanent destinations. Setup, sync repair, and per-metric status are focused Home drill-ins, preserving the four required product screens without giving one-time workflows permanent tab weight. `AppModel` owns observable UI state and platform services. |
 | Schema | `HealthMuleCore` encodes explicit JSON `null` values, validates local dates and offset-bearing timestamps, preserves unknown fields, and emits canonical sorted JSON. |
 | Aggregation | Pure Swift inputs cover latest values, stable arithmetic means, asleep-interval unioning, workout de-duplication, derived totals, and deterministic source ordering. |
-| Durable sync | `SyncEngine` and `FileSyncStore` implement semantic no-op detection, artifact revisions, a persistent retry queue, manifest ordering, retry backoff, reauthorization blocking, and full republishing when the destination account or managed folder identity changes. Date inventory is served from persisted artifact IDs; daily JSON is decoded on recover and reused in memory. Production state remains schema v1; the draft v2 design is in [FileSyncStore v2 migration](decisions/sync-store-v2-migration.md). |
+| Durable sync | `SyncEngine` and `FileSyncStore` implement semantic no-op detection, artifact revisions, a persistent retry queue, manifest ordering, retry backoff, reauthorization blocking, and full republishing when the destination account or managed folder identity changes. Date inventory is served from persisted artifact IDs; daily JSON is decoded on recover and reused in memory. The live index is schema v2 (SHA-256 digests and byte counts, not embedded payloads). A v1 index is migrated on recover and copied to `sync-state.v1.json`. See [FileSyncStore v2 migration](decisions/sync-store-v2-migration.md). |
 | Reconciliation | `LiveSyncCoordinator` combines enabled-metric anchored deltas, a rolling three-day window, missing dates from the fixed selected backfill boundary, and existing dates that need metric-selection scrubbing. It stages each date before committing anchors. |
 | HealthKit | A dedicated `HealthKitClient` actor keeps queries, sample transformation, aggregation, and anchor/day-boundary persistence off the UI actor. The app requests read access only, tracks the authorization-request lifecycle without claiming to know individual read grants, distinguishes a failed status check from a completed request, reports last readable samples, registers observer queries, fetches anchored deltas, preserves original day boundaries, and builds daily records with HealthKit statistics and sample queries. |
 | Google | GoogleSignIn restores and refreshes credentials, distinguishing a revoked grant, an account change, and a temporary network failure. OAuth authorization and verified Drive readiness are separate states. Every token refresh and Drive request is bound to its expected stable account ID. `DriveArtifactDestination` maps core artifacts and retry classifications onto account-scoped folder discovery and stable-ID multipart upserts. |
-| Watch companion | A watchOS 26 SwiftUI app receives a sanitized versioned status snapshot and sends an idempotent sync request through reachable Watch Connectivity messaging. A Foundation-only presentation model combines snapshot age, activation, reachability, and request delivery so stale or unreachable state cannot claim Up to Date. The iPhone owns the sync state machine and publishes status through application context. |
+| Watch companion | A watchOS 26 SwiftUI app receives a sanitized versioned status snapshot and sends an idempotent sync request through reachable Watch Connectivity messaging. A Foundation-only presentation model combines snapshot age, activation, reachability, and request delivery so stale or unreachable state cannot claim Up to Date. The iPhone owns the sync state machine and publishes status through application context plus a queued user-info transfer. |
 | Background refresh | The app registers a SwiftUI `BGAppRefreshTask` handler, bootstraps the same services if launched cold, and submits a best-effort request with a one-hour earliest start. An existing pending request is kept instead of cancelled and shifted later. |
 | Reporting | `AppModel` exposes operation-specific results, retryable and permanently blocked upload counts, the latest locally staged date, the last successful manifest upload for the active destination, per-metric readability, redacted sync counts, and bounded automatic-activity receipts. |
 | Diagnostics | A bounded in-memory recorder emits redacted lifecycle metadata through `OSLog` and a shareable JSON file. |
@@ -89,8 +89,9 @@ Solid arrows are implemented runtime paths.
   `watchCompanion` trigger. Repeated delivery stays safe because reconciliation
   and Drive upserts are idempotent.
 - Semantic snapshot equality excludes `generatedAt`, so a timestamp-only update
-  neither republishes application context nor completes a Watch request
-  acknowledgement.
+  neither republishes the snapshot nor completes a Watch request
+  acknowledgement. A published snapshot is written to application context and
+  queued as a user-info transfer after cancelling any outstanding transfer.
 - Activation, session deactivation, and Watch pairing-state changes invalidate
   that publication cache, so a newly activated or reinstalled companion can
   receive one current full snapshot.
@@ -98,7 +99,7 @@ Solid arrows are implemented runtime paths.
 `CompanionStatusModel` decides what the Watch is allowed to claim.
 
 - A snapshot counts as current for 30 minutes, a conservative allowance for
-  eventual application-context delivery.
+  eventual application-context and user-info delivery.
 - A future timestamp has unknown freshness.
 - Last confirmed success and the pending, retryable, and blocked counts stay
   independent facts even when the status is stale or the phone is unreachable.
@@ -465,9 +466,10 @@ Background work is eventual and system-controlled.
 - A reachable Watch request is acknowledged promptly, then the iPhone performs
   reconciliation and republishes status.
 - The Watch action is disabled while the iPhone is unreachable; background
-  status delivery remains eventual through application context. Missing status
-  shows Waiting for iPhone with a retry action; stale or unreachable status
-  keeps its last confirmed facts without claiming Up to Date.
+  status delivery remains eventual through application context plus a queued
+  user-info transfer of the same snapshot. Missing status shows Waiting for
+  iPhone with a retry action; stale or unreachable status keeps its last
+  confirmed facts without claiming Up to Date.
 - `BGAppRefreshTask` is a fallback reconciliation opportunity.
 - A cold background launch first restores services and credentials through the
   same bootstrap gate used by the foreground app.

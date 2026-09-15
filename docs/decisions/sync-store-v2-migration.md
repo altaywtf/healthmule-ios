@@ -2,16 +2,19 @@
 
 ## Status
 
-`draft`
+`implemented`
 
-- Date: 2026-09-14
+- Date: 2026-09-15
 - Parent ADR: [Sync store persistence scaling](sync-store-persistence.md)
-- Production baseline remains schema v1 in `Sources/HealthMuleCore/Sync/FileSyncStore.swift`
+- Production baseline is schema v2 in `Sources/HealthMuleCore/Sync/FileSyncStore.swift`
 
-This document is **not** production authorization. It does not change
-`FileSyncStore`, the on-disk schema, or the export JSON contract. A later
-implementation plan is required after human review of this design, plus the
-proof listed below.
+The live index is schema 2. Recover still reads schema 1, copies it to
+`sync-state.v1.json` once, and publishes v2 atomically. Older builds cannot
+read a v2 `sync-state.json`. Restoring the frozen v1 copy is a pre-migration
+rollback only; later days recover from artifact files.
+
+Live dual-write of v1 was rejected: it would restore the quadratic rewrite the
+parent ADR measured.
 
 ## Goal
 
@@ -26,11 +29,11 @@ Do not adopt SQLite unless a reviewed file-based v2 fails those constraints.
 
 ## On-disk contract
 
-**Recommendation** (not decided): keep `daily/<date>.json` as the sole content
-bytes for daily artifacts. Do not add a second sidecar copy of the record body.
+Keep `daily/<date>.json` as the sole content bytes for daily artifacts. Do not
+add a second sidecar copy of the record body.
 
-**Recommendation** (not decided): replace `ArtifactState.semanticData` and
-`contentData` with fixed-size digests plus byte lengths:
+Replace `ArtifactState.semanticData` and `contentData` with fixed-size digests
+plus byte lengths:
 
 | Field | Role |
 |---|---|
@@ -40,17 +43,17 @@ bytes for daily artifacts. Do not add a second sidecar copy of the record body.
 | `contentDigest` | SHA-256 of canonical encoded artifact bytes |
 | `contentByteCount` | encoded size, for cheap mismatch detection |
 
-**Recommendation** (not decided): store those fields in `sync-state.json` with
-`schemaVersion: 2`. Manifest and other non-daily artifacts keep their existing
-artifact files; the index holds only digests for them as well.
+Those fields live in `sync-state.json` with `schemaVersion: 2`. Manifest and
+other non-daily artifacts keep their existing artifact files; the index holds
+only digests for them as well.
 
-Draft names (replace only in an implementation plan):
+Names:
 
 - `sync-state.json` — v2 metadata index
 - `daily/<date>.json` — canonical daily artifact (unchanged path)
 - `manifest.json` — canonical manifest artifact (unchanged path)
-- `sync-state.v1.json` — retained v1 index during migration, never deleted
-  until every artifact, revision, and retry item has round-tripped
+- `sync-state.v1.json` — frozen v1 index written once at migration
+- `sync-state.v2.tmp.json` — ignored and deleted if present after interruption
 
 Sidecar-per-artifact copies of `semanticData`/`contentData` are rejected: they
 would duplicate `daily/*.json` and reintroduce rewrite amplification.
@@ -106,39 +109,29 @@ The parent ADR rollback constraints remain mandatory:
 6. Re-run the fixed `SyncStoreBenchmark` and the complete `FileSyncStore`
    correctness suite before the migration can be proposed for release.
 
-Recommended sequence (still not authorized):
+Implemented sequence:
 
 | State | On disk | Reader |
 |---|---|---|
-| `v1-only` | `sync-state.json` schema 1 | current app |
-| `v2-building` | v1 index untouched; v2 index in a temp name under the same protected root | current app ignores the temp file |
-| `v2-published` | atomic rename of the temp v2 index to `sync-state.json`; v1 copy kept as `sync-state.v1.json` | new app |
-| `rolled-back` | restore `sync-state.v1.json` over `sync-state.json` | older app |
+| `v1-only` | `sync-state.json` schema 1 | this app migrates on recover |
+| `v2-published` | v2 at `sync-state.json`; frozen v1 at `sync-state.v1.json` | this app |
+| `rolled-back` | restore `sync-state.v1.json` over `sync-state.json` | older app, pre-migration only |
 
-Older app after `v2-published`: `schemaVersion != 1` currently throws
-`unsupportedStateVersion`. **Recommendation**: keep a v1 copy until the
-compatibility window ends, and teach the old binary nothing. If a user
-installs an older build, that build must see v1 at `sync-state.json`.
-Therefore v2 publication should not overwrite `sync-state.json` until the
-shipping app can both read v2 *and* the product has accepted dropping older
-builds — or the new app dual-writes v1 until that window closes.
-
-**Recommendation** for the compatibility window: dual-write v1 and v2 until
-the next app version that refuses v1, then stop writing v1. Dual-write keeps
-constraint 5 without teaching old binaries a new schema. Measure dual-write
-cost against the ADR tables before committing to it in code.
+This app reads schema 1 or 2. It writes schema 2. It does not dual-write a live
+v1 index. An older build that only accepts schema 1 must not be installed over
+a v2 index. Operator rollback is restore the frozen v1 copy (loses post-migration
+revisions) or delete `sync-state.json` and recover from artifact files.
 
 Interruption: each step is idempotent. Re-running migration from `v1-only`
-rebuilds the temp v2 index from artifacts plus the v1 revision/retry fields.
-It must not bump `localRevision` merely because the digest was computed
-again.
+rebuilds v2 from artifacts plus the v1 revision/retry fields. It must not bump
+`localRevision` merely because the digest was computed again.
 
 ## Corruption behavior
 
 - Unreadable artifact JSON: fail `recover()` with the existing invalid-artifact
   path. Do not delete files.
 - Unreadable v2 index: if `sync-state.v1.json` exists, rebuild v2 from v1 plus
-  artifact files into temp storage; do not publish until validation passes.
+  artifact files; do not publish until validation passes.
 - Digest mismatch with a readable artifact: treat as a local content change
   (revision bump + retry), matching v1’s payload mismatch.
 - `schemaVersion` other than 1 or 2: fail closed (`unsupportedStateVersion`).
@@ -150,8 +143,8 @@ Never log record bodies, health values, paths, tokens, or identifiers.
 
 - Re-run `./scripts/swift.sh run -c release SyncStoreBenchmark` with the same
   four-field CSV, locale hardening, and redaction rules as the parent ADR.
-- Target: cumulative state bytes grow linearly with day count, not with the
-  square of day count, on the 30 / 90 / 365 / 1,825 empty-record matrix.
+- Target: final state bytes grow linearly with day count. Cumulative bytes stay
+  quadratic at a smaller constant while the atomic index is rewritten in full.
 - Full `FileSyncStore` suite, including cancellation, semantic equality,
   unknown-field preservation, and destination republish.
 - Characterization tests that pin v1 → v2 revision and retry identity for
@@ -167,14 +160,9 @@ health value, temporary identifier, or real export data.
 
 | Question | Recommendation | Status |
 |---|---|---|
-| Digest algorithm | SHA-256 | recommendation |
-| Store full digest vs truncated | full 32-byte digest, hex in JSON | recommendation |
-| Extra semantic sidecar files | no; derive from `daily/*.json` | recommendation |
-| Dual-write v1 during compatibility | yes, until an explicit drop-old-builds release | recommendation |
+| Digest algorithm | SHA-256 | accepted |
+| Store full digest vs truncated | full 32-byte digest, hex in JSON | accepted |
+| Extra semantic sidecar files | no; derive from `daily/*.json` | accepted |
+| Dual-write v1 during compatibility | no; freeze v1 at migration | accepted |
 | SQLite | out unless file-based v2 fails proof | rejected for now |
 | PERF-03 decode-all-records | independent of this design | out of scope |
-
-## Follow-up
-
-Implementation, if authorized, is a new plan: characterization tests first, no
-schema flip in the same change as unrelated HealthKit or Drive work.

@@ -978,6 +978,227 @@ struct FileSyncStoreTests {
         #expect(recovered.revision == manifest.revision)
         #expect(recovered.contents == refreshedContents)
     }
+
+    @Test
+    func stagedStateUsesDigestIndexWithoutEmbeddedPayloads() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try FileSyncStore(rootDirectory: directory)
+        let record = try makeRecord()
+        _ = try await store.stageDaily(record)
+
+        let state = try String(
+            contentsOf: directory.appendingPathComponent("sync-state.json"),
+            encoding: .utf8
+        )
+        #expect(state.contains("\"schemaVersion\":2"))
+        #expect(state.contains("semanticDigest"))
+        #expect(state.contains("contentDigest"))
+        #expect(state.contains("contentByteCount"))
+        #expect(!state.contains("semanticData"))
+        #expect(!state.contains("contentData"))
+    }
+
+    @Test
+    func v1IndexMigratesWithoutChangingRevisionsOrRetryIdentity() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = try makeRecord()
+        let contents = try DailyHealthRecordCodec.encode(record)
+        let semanticData = try DailyHealthRecordCodec.semanticData(for: record)
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("daily", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try contents.write(
+            to: directory.appendingPathComponent("daily/2026-07-23.json"),
+            options: [.atomic]
+        )
+        let retryItem = RetryQueueItem(
+            artifactID: .daily(record.date),
+            revision: 4,
+            attemptCount: 3,
+            notBefore: Date(timeIntervalSince1970: 1_500),
+            blockReason: .reauthorizationRequired,
+            lastErrorCode: "401"
+        )
+        let v1Data = try CanonicalJSON.encode(
+            LegacyV1State(
+                artifacts: [
+                    ExportArtifactID.daily(record.date).key: LegacyV1Artifact(
+                        id: .daily(record.date),
+                        localRevision: 4,
+                        uploadedRevision: 2,
+                        semanticData: semanticData,
+                        contentData: contents
+                    )
+                ],
+                retryQueue: [retryItem],
+                manifestNeedsRefresh: false
+            )
+        )
+        try v1Data.write(
+            to: directory.appendingPathComponent("sync-state.json"),
+            options: [.atomic]
+        )
+
+        let store = try FileSyncStore(rootDirectory: directory)
+        try await store.recover()
+
+        let revisions = try #require(
+            try await store.artifactState(for: .daily(record.date))
+        )
+        #expect(revisions.localRevision == 4)
+        #expect(revisions.uploadedRevision == 2)
+        let recoveredRetry = try #require(try await store.retryItems().first)
+        #expect(recoveredRetry == retryItem)
+        #expect(
+            try await store.stageDaily(record)
+                == .unchanged(.daily(record.date), revision: 4)
+        )
+
+        let migrated = try String(
+            contentsOf: directory.appendingPathComponent("sync-state.json"),
+            encoding: .utf8
+        )
+        #expect(migrated.contains("\"schemaVersion\":2"))
+        let backup = try Data(
+            contentsOf: directory.appendingPathComponent("sync-state.v1.json")
+        )
+        #expect(backup == v1Data)
+    }
+
+    @Test
+    func interruptedV1MigrationIsRetryableWithoutRevisionBump() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = try makeRecord()
+        let contents = try DailyHealthRecordCodec.encode(record)
+        let semanticData = try DailyHealthRecordCodec.semanticData(for: record)
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("daily", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try contents.write(
+            to: directory.appendingPathComponent("daily/2026-07-23.json"),
+            options: [.atomic]
+        )
+        let v1Data = try CanonicalJSON.encode(
+            LegacyV1State(
+                artifacts: [
+                    ExportArtifactID.daily(record.date).key: LegacyV1Artifact(
+                        id: .daily(record.date),
+                        localRevision: 2,
+                        uploadedRevision: 2,
+                        semanticData: semanticData,
+                        contentData: contents
+                    )
+                ],
+                retryQueue: [],
+                manifestNeedsRefresh: false
+            )
+        )
+        try v1Data.write(
+            to: directory.appendingPathComponent("sync-state.json"),
+            options: [.atomic]
+        )
+        try v1Data.write(
+            to: directory.appendingPathComponent("sync-state.v1.json"),
+            options: [.atomic]
+        )
+
+        let store = try FileSyncStore(rootDirectory: directory)
+        try await store.recover()
+
+        let revisions = try #require(
+            try await store.artifactState(for: .daily(record.date))
+        )
+        #expect(revisions.localRevision == 2)
+        #expect(revisions.uploadedRevision == 2)
+        #expect(try await store.retryItems().isEmpty)
+        #expect(
+            try await store.stageDaily(record)
+                == .unchanged(.daily(record.date), revision: 2)
+        )
+    }
+
+    @Test
+    func unreadableV2IndexRebuildsFromPreservedV1Copy() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = try makeRecord()
+        let contents = try DailyHealthRecordCodec.encode(record)
+        let semanticData = try DailyHealthRecordCodec.semanticData(for: record)
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("daily", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try contents.write(
+            to: directory.appendingPathComponent("daily/2026-07-23.json"),
+            options: [.atomic]
+        )
+        let v1Data = try CanonicalJSON.encode(
+            LegacyV1State(
+                artifacts: [
+                    ExportArtifactID.daily(record.date).key: LegacyV1Artifact(
+                        id: .daily(record.date),
+                        localRevision: 5,
+                        uploadedRevision: 5,
+                        semanticData: semanticData,
+                        contentData: contents
+                    )
+                ],
+                retryQueue: [],
+                manifestNeedsRefresh: false
+            )
+        )
+        try v1Data.write(
+            to: directory.appendingPathComponent("sync-state.v1.json"),
+            options: [.atomic]
+        )
+        try Data("{".utf8).write(
+            to: directory.appendingPathComponent("sync-state.json"),
+            options: [.atomic]
+        )
+
+        let store = try FileSyncStore(rootDirectory: directory)
+        try await store.recover()
+        let revisions = try #require(
+            try await store.artifactState(for: .daily(record.date))
+        )
+        #expect(revisions.localRevision == 5)
+        #expect(revisions.uploadedRevision == 5)
+        #expect(try await store.retryItems().isEmpty)
+    }
+
+    @Test
+    func unsupportedStateVersionFailsClosed() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("{\"schemaVersion\":3}\n".utf8).write(
+            to: directory.appendingPathComponent("sync-state.json"),
+            options: [.atomic]
+        )
+        let store = try FileSyncStore(rootDirectory: directory)
+        await #expect(throws: FileSyncStoreError.unsupportedStateVersion(3)) {
+            try await store.recover()
+        }
+    }
+}
+
+private struct LegacyV1Artifact: Codable {
+    var id: ExportArtifactID
+    var localRevision: Int
+    var uploadedRevision: Int
+    var semanticData: Data
+    var contentData: Data?
+}
+
+private struct LegacyV1State: Codable {
+    var schemaVersion = 1
+    var artifacts: [String: LegacyV1Artifact]
+    var retryQueue: [RetryQueueItem]
+    var manifestNeedsRefresh: Bool
 }
 
 private func makeTestManifest(

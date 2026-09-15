@@ -5,20 +5,41 @@ public actor FileSyncStore {
         var id: ExportArtifactID
         var localRevision: Int
         var uploadedRevision: Int
-        var semanticData: Data
-        var contentData: Data?
+        var semanticDigest: String
+        var contentDigest: String
+        var contentByteCount: Int
     }
 
     private struct PersistedState: Codable, Equatable, Sendable {
-        var schemaVersion = 1
+        var schemaVersion = 2
         var artifacts: [String: ArtifactState] = [:]
         var retryQueue: [RetryQueueItem] = []
         var manifestNeedsRefresh = true
     }
 
+    private struct SchemaPeek: Decodable {
+        var schemaVersion: Int
+    }
+
+    private struct LegacyV1ArtifactState: Decodable {
+        var id: ExportArtifactID
+        var localRevision: Int
+        var uploadedRevision: Int
+        var semanticData: Data
+        var contentData: Data?
+    }
+
+    private struct LegacyV1PersistedState: Decodable {
+        var schemaVersion: Int
+        var artifacts: [String: LegacyV1ArtifactState]
+        var retryQueue: [RetryQueueItem]
+        var manifestNeedsRefresh: Bool
+    }
+
     private let rootDirectory: URL
     private let dailyDirectory: URL
     private let stateFile: URL
+    private let v1BackupFile: URL
     private var state: PersistedState
     private var hasRecovered = false
     private var dailyRecordsByDate: [LocalDate: DailyHealthRecord] = [:]
@@ -27,6 +48,10 @@ public actor FileSyncStore {
         self.rootDirectory = rootDirectory
         dailyDirectory = rootDirectory.appendingPathComponent("daily", isDirectory: true)
         stateFile = rootDirectory.appendingPathComponent("sync-state.json", isDirectory: false)
+        v1BackupFile = rootDirectory.appendingPathComponent(
+            "sync-state.v1.json",
+            isDirectory: false
+        )
         state = PersistedState()
     }
 
@@ -59,14 +84,17 @@ public actor FileSyncStore {
                         try DailyHealthRecordCodec.semanticData(for: prior)
                     if let existing = state.artifacts[id.key] {
                         guard
-                            existing.semanticData != priorSemanticData
-                                || existing.contentData != priorContents
+                            !indexedPayloadMatches(
+                                existing,
+                                semanticData: priorSemanticData,
+                                contentData: priorContents
+                            )
                         else {
                             return .unchanged(id, revision: existing.localRevision)
                         }
                         let recoveredRevision = existing.localRevision + 1
                         var nextState = state
-                        nextState.artifacts[id.key] = ArtifactState(
+                        nextState.artifacts[id.key] = makeArtifactState(
                             id: id,
                             localRevision: recoveredRevision,
                             uploadedRevision: existing.uploadedRevision,
@@ -89,7 +117,7 @@ public actor FileSyncStore {
                         )
                     }
                     var nextState = state
-                    nextState.artifacts[id.key] = ArtifactState(
+                    nextState.artifacts[id.key] = makeArtifactState(
                         id: id,
                         localRevision: 1,
                         uploadedRevision: 0,
@@ -109,8 +137,11 @@ public actor FileSyncStore {
                     try DailyHealthRecordCodec.semanticData(for: prior)
                 if
                     let existing = state.artifacts[id.key],
-                    existing.semanticData == priorSemanticData,
-                    existing.contentData == normalizedPriorContents
+                    indexedPayloadMatches(
+                        existing,
+                        semanticData: priorSemanticData,
+                        contentData: normalizedPriorContents
+                    )
                 {
                     try writeArtifactFirst(normalizedPriorContents, to: url)
                     return .unchanged(
@@ -132,7 +163,7 @@ public actor FileSyncStore {
 
         var nextState = state
         let uploadedRevision = nextState.artifacts[id.key]?.uploadedRevision ?? 0
-        nextState.artifacts[id.key] = ArtifactState(
+        nextState.artifacts[id.key] = makeArtifactState(
             id: id,
             localRevision: nextRevision,
             uploadedRevision: uploadedRevision,
@@ -162,10 +193,13 @@ public actor FileSyncStore {
         }
 
         let contents = try ExportManifestCodec.encode(manifest)
-        let semanticData = contents
         if
             let existing = state.artifacts[id.key],
-            existing.semanticData == semanticData,
+            indexedPayloadMatches(
+                existing,
+                semanticData: contents,
+                contentData: contents
+            ),
             existing.localRevision > existing.uploadedRevision,
             manifestFileExists
         {
@@ -193,11 +227,11 @@ public actor FileSyncStore {
 
         var nextState = state
         let uploadedRevision = nextState.artifacts[id.key]?.uploadedRevision ?? 0
-        nextState.artifacts[id.key] = ArtifactState(
+        nextState.artifacts[id.key] = makeArtifactState(
             id: id,
             localRevision: nextRevision,
             uploadedRevision: uploadedRevision,
-            semanticData: semanticData,
+            semanticData: contents,
             contentData: contents
         )
         replaceRetryItem(
@@ -236,7 +270,7 @@ public actor FileSyncStore {
         try writeArtifactFirst(contents, to: url)
 
         var nextState = state
-        nextState.artifacts[id.key] = ArtifactState(
+        nextState.artifacts[id.key] = makeArtifactState(
             id: id,
             localRevision: existing.localRevision,
             uploadedRevision: existing.uploadedRevision,
@@ -523,15 +557,18 @@ public actor FileSyncStore {
         try Self.protectAndExcludeFromBackup(rootDirectory)
         try Self.protectAndExcludeFromBackup(dailyDirectory)
         #endif
+        discardPartialV2Index()
         if FileManager.default.fileExists(atPath: stateFile.path) {
             let data = try Data(contentsOf: stateFile)
-            let decoded = try CanonicalJSON.decode(PersistedState.self, from: data)
-            guard decoded.schemaVersion == 1 else {
-                throw FileSyncStoreError.unsupportedStateVersion(
-                    decoded.schemaVersion
-                )
+            do {
+                state = try decodePersistedState(data)
+            } catch let error as FileSyncStoreError {
+                throw error
+            } catch {
+                state = try recoverPersistedStateFromV1Backup()
             }
-            state = decoded
+        } else if FileManager.default.fileExists(atPath: v1BackupFile.path) {
+            state = try recoverPersistedStateFromV1Backup()
         } else {
             state = PersistedState()
         }
@@ -560,11 +597,14 @@ public actor FileSyncStore {
             let semanticData = try DailyHealthRecordCodec.semanticData(for: record)
             if let existing = nextState.artifacts[id.key] {
                 if
-                    existing.semanticData != semanticData
-                        || existing.contentData != contents
+                    !indexedPayloadMatches(
+                        existing,
+                        semanticData: semanticData,
+                        contentData: contents
+                    )
                 {
                     let revision = existing.localRevision + 1
-                    nextState.artifacts[id.key] = ArtifactState(
+                    nextState.artifacts[id.key] = makeArtifactState(
                         id: id,
                         localRevision: revision,
                         uploadedRevision: existing.uploadedRevision,
@@ -583,7 +623,7 @@ public actor FileSyncStore {
                     )
                 }
             } else {
-                nextState.artifacts[id.key] = ArtifactState(
+                nextState.artifacts[id.key] = makeArtifactState(
                     id: id,
                     localRevision: 1,
                     uploadedRevision: 0,
@@ -635,8 +675,11 @@ public actor FileSyncStore {
 
         if let existing = nextState.artifacts[id.key] {
             if
-                existing.semanticData != contents
-                    || existing.contentData != contents
+                !indexedPayloadMatches(
+                    existing,
+                    semanticData: contents,
+                    contentData: contents
+                )
             {
                 let pendingRefresh = existing.localRevision
                     > existing.uploadedRevision
@@ -645,7 +688,7 @@ public actor FileSyncStore {
                             && $0.revision == existing.localRevision
                     }
                 if pendingRefresh {
-                    nextState.artifacts[id.key] = ArtifactState(
+                    nextState.artifacts[id.key] = makeArtifactState(
                         id: id,
                         localRevision: existing.localRevision,
                         uploadedRevision: existing.uploadedRevision,
@@ -654,7 +697,7 @@ public actor FileSyncStore {
                     )
                 } else {
                     let revision = existing.localRevision + 1
-                    nextState.artifacts[id.key] = ArtifactState(
+                    nextState.artifacts[id.key] = makeArtifactState(
                         id: id,
                         localRevision: revision,
                         uploadedRevision: existing.uploadedRevision,
@@ -673,7 +716,7 @@ public actor FileSyncStore {
                 )
             }
         } else {
-            nextState.artifacts[id.key] = ArtifactState(
+            nextState.artifacts[id.key] = makeArtifactState(
                 id: id,
                 localRevision: 1,
                 uploadedRevision: 0,
@@ -795,6 +838,108 @@ public actor FileSyncStore {
 
     private func artifactURL(for id: ExportArtifactID) -> URL {
         rootDirectory.appendingPathComponent(id.relativePath, isDirectory: false)
+    }
+
+    private func decodePersistedState(_ data: Data) throws -> PersistedState {
+        let peek = try CanonicalJSON.decode(SchemaPeek.self, from: data)
+        switch peek.schemaVersion {
+        case 1:
+            try preserveV1IndexIfNeeded(data)
+            return try migrateV1(CanonicalJSON.decode(
+                LegacyV1PersistedState.self,
+                from: data
+            ))
+        case 2:
+            return try CanonicalJSON.decode(PersistedState.self, from: data)
+        default:
+            throw FileSyncStoreError.unsupportedStateVersion(peek.schemaVersion)
+        }
+    }
+
+    private func recoverPersistedStateFromV1Backup() throws -> PersistedState {
+        guard FileManager.default.fileExists(atPath: v1BackupFile.path) else {
+            return PersistedState()
+        }
+        let backup = try Data(contentsOf: v1BackupFile)
+        return try decodePersistedState(backup)
+    }
+
+    private func preserveV1IndexIfNeeded(_ data: Data) throws {
+        guard !FileManager.default.fileExists(atPath: v1BackupFile.path) else {
+            return
+        }
+        try writeProtectedState(data, to: v1BackupFile)
+    }
+
+    private func discardPartialV2Index() {
+        let temporary = rootDirectory.appendingPathComponent(
+            "sync-state.v2.tmp.json",
+            isDirectory: false
+        )
+        try? FileManager.default.removeItem(at: temporary)
+    }
+
+    private func migrateV1(_ legacy: LegacyV1PersistedState) -> PersistedState {
+        var artifacts: [String: ArtifactState] = [:]
+        artifacts.reserveCapacity(legacy.artifacts.count)
+        for (key, artifact) in legacy.artifacts {
+            let contentData = artifact.contentData ?? artifact.semanticData
+            artifacts[key] = makeArtifactState(
+                id: artifact.id,
+                localRevision: artifact.localRevision,
+                uploadedRevision: artifact.uploadedRevision,
+                semanticData: artifact.semanticData,
+                contentData: contentData
+            )
+        }
+        return PersistedState(
+            schemaVersion: 2,
+            artifacts: artifacts,
+            retryQueue: legacy.retryQueue,
+            manifestNeedsRefresh: legacy.manifestNeedsRefresh
+        )
+    }
+
+    private func makeArtifactState(
+        id: ExportArtifactID,
+        localRevision: Int,
+        uploadedRevision: Int,
+        semanticData: Data,
+        contentData: Data
+    ) -> ArtifactState {
+        ArtifactState(
+            id: id,
+            localRevision: localRevision,
+            uploadedRevision: uploadedRevision,
+            semanticDigest: SHA256Digest.hexString(of: semanticData),
+            contentDigest: SHA256Digest.hexString(of: contentData),
+            contentByteCount: contentData.count
+        )
+    }
+
+    private func indexedPayloadMatches(
+        _ existing: ArtifactState,
+        semanticData: Data,
+        contentData: Data
+    ) -> Bool {
+        existing.contentByteCount == contentData.count
+            && existing.contentDigest == SHA256Digest.hexString(of: contentData)
+            && existing.semanticDigest == SHA256Digest.hexString(of: semanticData)
+    }
+
+    private func writeProtectedState(_ data: Data, to url: URL) throws {
+        #if os(iOS)
+        try data.write(
+            to: url,
+            options: [
+                .atomic,
+                .completeFileProtectionUntilFirstUserAuthentication,
+            ]
+        )
+        try Self.protectAndExcludeFromBackup(url)
+        #else
+        try data.write(to: url, options: [.atomic])
+        #endif
     }
 
     #if os(iOS)

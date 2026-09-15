@@ -59,6 +59,10 @@ final class PhoneWatchConnectivityCoordinator: NSObject {
             try session.updateApplicationContext(message)
             publicationState.didPublish(snapshot)
         } catch {}
+        for transfer in session.outstandingUserInfoTransfers {
+            transfer.cancel()
+        }
+        session.transferUserInfo(message)
     }
 
     private func handleSyncRequest() async {

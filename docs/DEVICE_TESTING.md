@@ -31,6 +31,22 @@ boundaries.
 Implemented rows describe live code paths, not completed platform acceptance.
 They still require the signed-device scenarios below.
 
+## Proof matrix
+
+| Behavior | Simulator | Physical iPhone | Paired Watch |
+| --- | --- | --- | --- |
+| App shell, fixtures, `make harness` | yes | n/a | n/a |
+| Deterministic export and sync contracts | `make test-core` | n/a | n/a |
+| Foreground HealthKit authorization and queries | fixtures only | required | n/a |
+| Daily aggregation, staging, Drive upload | fixtures / mocked Drive | required | n/a |
+| HealthKit background observer delivery | no | required | n/a |
+| Lock-state protected files, process-surviving uploads | no | required | n/a |
+| Reachable Watch sync request | `canRequestSync` is false | n/a | required |
+| Background application-context and user-info snapshot | no | n/a | required |
+
+Simulator gates never claim real `HKHealthStore`-to-Drive proof or Watch
+Connectivity delivery.
+
 ## Prerequisites
 
 - A physical iPhone running iOS 26 or later.
@@ -138,7 +154,8 @@ configured OAuth client and integration Drive account.
 - [ ] Restore reachability, request another sync, and confirm the iPhone's
   existing reconciliation path publishes a fresh status snapshot.
 - [ ] Leave the Watch app, allow background delivery, and confirm the latest
-  application-context snapshot appears after reopening it.
+  snapshot appears after reopening it. The iPhone publishes that snapshot
+  through application context and a queued user-info transfer.
 
 ## Background acceptance
 

@@ -812,7 +812,7 @@ private actor CoordinatorRecordProvider: ConfigurableDailyRecordProvider {
     func configure(
         earliestVO2Date _: Date,
         enabledMetrics _: Set<HealthMetric>
-    ) {}
+    ) async {}
 
     func record(for date: LocalDate) async throws -> DailyHealthRecord {
         if date == failureDate {

@@ -6,7 +6,7 @@ protocol ConfigurableDailyRecordProvider: DailyRecordProvider, Actor {
     func configure(
         earliestVO2Date: Date,
         enabledMetrics: Set<HealthMetric>
-    )
+    ) async
 }
 
 actor HealthKitDailyRecordProvider: ConfigurableDailyRecordProvider {
@@ -25,7 +25,8 @@ actor HealthKitDailyRecordProvider: ConfigurableDailyRecordProvider {
     func configure(
         earliestVO2Date: Date,
         enabledMetrics: Set<HealthMetric>
-    ) {
+    ) async {
+        await healthKit.resetDailyQueryWindows()
         configuration = Configuration(
             earliestVO2Date: earliestVO2Date,
             enabledMetrics: enabledMetrics
@@ -108,17 +109,13 @@ extension HealthKitClient {
             options: [.strictStartDate],
             unit: .secondUnit(with: .milli)
         )
-        async let vo2Max = quantitySamples(
+        async let vo2Max = cachedVO2Samples(
             enabled: enabledMetrics.contains(.vo2Max)
                 && earliestVO2Date < boundary.end,
-            identifier: .vo2Max,
-            // R4 bounds carry-forward to the selected export history window.
-            start: earliestVO2Date,
-            end: boundary.end,
-            options: [.strictEndDate],
-            unit: HKUnit(from: "ml/kg*min")
+            earliest: earliestVO2Date,
+            dayEnd: boundary.end
         )
-        async let sleep = sleepSamples(
+        async let sleep = cachedSleepSamples(
             enabled: enabledMetrics.contains(.sleep),
             boundary: boundary
         )
@@ -286,29 +283,144 @@ private extension HealthKitClient {
         )
     }
 
-    func sleepSamples(
+    func workoutSamples(
         enabled: Bool,
         boundary: StoredDayBoundary
+    ) async throws -> WorkoutResult {
+        guard enabled else {
+            return WorkoutResult(values: [], rawSamples: [])
+        }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: boundary.start,
+            end: boundary.end,
+            options: [.strictStartDate]
+        )
+        let workouts: [HKWorkout] = try await samples(
+            type: HKObjectType.workoutType(),
+            predicate: predicate
+        )
+        let values = workouts.map { workout in
+            WorkoutSample(
+                id: workout.uuid.uuidString,
+                type: Self.workoutTypeName(workout.workoutActivityType),
+                start: workout.startDate,
+                end: workout.endDate,
+                activeEnergyKcal: Self.activeEnergy(for: workout),
+                distanceMeters: Self.distance(for: workout)
+            )
+        }
+        return WorkoutResult(values: values, rawSamples: workouts)
+    }
+
+    func cachedVO2Samples(
+        enabled: Bool,
+        earliest: Date,
+        dayEnd: Date,
+        now: Date = .now
+    ) async throws -> QuantityResult {
+        guard enabled else {
+            return QuantityResult(values: [], rawSamples: [])
+        }
+        let unit = HKUnit(from: "ml/kg*min")
+        let dayWindow = HealthKitQueryWindow.vo2DayWindow(
+            earliest: earliest,
+            dayEnd: dayEnd
+        )
+        let options: HKQueryOptions = [.strictEndDate]
+        if let cache = vo2WindowCache, cache.covers(dayWindow) {
+            return quantityResult(
+                from: cache.samples(in: dayWindow, options: options),
+                unit: unit
+            )
+        }
+        let fetchWindow = HealthKitQueryWindow.vo2FetchWindow(
+            earliest: earliest,
+            dayEnd: dayEnd,
+            now: now
+        )
+        let window = vo2WindowCache.map { $0.window.union(fetchWindow) }
+            ?? fetchWindow
+        guard let type = HKObjectType.quantityType(forIdentifier: .vo2Max) else {
+            throw HealthKitClientError.queryFailed
+        }
+        let samples: [HKQuantitySample] = try await samples(
+            type: type,
+            predicate: HKQuery.predicateForSamples(
+                withStart: window.start,
+                end: window.end,
+                options: options
+            )
+        )
+        let cache = HealthKitSampleWindowCache(window: window, samples: samples)
+        vo2WindowCache = cache
+        return quantityResult(
+            from: cache.samples(in: dayWindow, options: options),
+            unit: unit
+        )
+    }
+
+    func cachedSleepSamples(
+        enabled: Bool,
+        boundary: StoredDayBoundary,
+        now: Date = .now
     ) async throws -> SleepResult {
         guard enabled else {
             return SleepResult(values: [], rawSamples: [])
         }
-        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+        let dayWindow = HealthKitQueryWindow.sleepDayWindow(boundary: boundary)
+        if let cache = sleepWindowCache, cache.covers(dayWindow) {
+            return sleepResult(
+                from: cache.samples(in: dayWindow, options: []),
+                boundary: boundary
+            )
+        }
+        let fetchWindow = HealthKitQueryWindow.sleepFetchWindow(
+            boundary: boundary,
+            now: now
+        )
+        let window = sleepWindowCache.map { $0.window.union(fetchWindow) }
+            ?? fetchWindow
+        guard
+            let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
+        else {
             throw HealthKitClientError.queryFailed
         }
-        let queryStart = boundary.start.addingTimeInterval(-24 * 60 * 60)
-        let queryEnd = boundary.end.addingTimeInterval(
-            SleepSessionSelector.maximumGap + 1
-        )
-        let predicate = HKQuery.predicateForSamples(
-            withStart: queryStart,
-            end: queryEnd,
-            options: []
-        )
-        let rawSamples: [HKCategorySample] = try await samples(
+        let samples: [HKCategorySample] = try await samples(
             type: type,
-            predicate: predicate
+            predicate: HKQuery.predicateForSamples(
+                withStart: window.start,
+                end: window.end,
+                options: []
+            )
         )
+        let cache = HealthKitSampleWindowCache(window: window, samples: samples)
+        sleepWindowCache = cache
+        return sleepResult(
+            from: cache.samples(in: dayWindow, options: []),
+            boundary: boundary
+        )
+    }
+
+    func quantityResult(
+        from samples: [HKQuantitySample],
+        unit: HKUnit
+    ) -> QuantityResult {
+        QuantityResult(
+            values: samples.map {
+                TimedQuantitySample(
+                    id: $0.uuid.uuidString,
+                    measuredAt: $0.endDate,
+                    value: $0.quantity.doubleValue(for: unit)
+                )
+            },
+            rawSamples: samples
+        )
+    }
+
+    func sleepResult(
+        from rawSamples: [HKCategorySample],
+        boundary: StoredDayBoundary
+    ) -> SleepResult {
         let sorted = rawSamples.sorted {
             if $0.startDate != $1.startDate {
                 return $0.startDate < $1.startDate
@@ -339,35 +451,6 @@ private extension HealthKitClient {
             values: values,
             rawSamples: selectedSamples
         )
-    }
-
-    func workoutSamples(
-        enabled: Bool,
-        boundary: StoredDayBoundary
-    ) async throws -> WorkoutResult {
-        guard enabled else {
-            return WorkoutResult(values: [], rawSamples: [])
-        }
-        let predicate = HKQuery.predicateForSamples(
-            withStart: boundary.start,
-            end: boundary.end,
-            options: [.strictStartDate]
-        )
-        let workouts: [HKWorkout] = try await samples(
-            type: HKObjectType.workoutType(),
-            predicate: predicate
-        )
-        let values = workouts.map { workout in
-            WorkoutSample(
-                id: workout.uuid.uuidString,
-                type: Self.workoutTypeName(workout.workoutActivityType),
-                start: workout.startDate,
-                end: workout.endDate,
-                activeEnergyKcal: Self.activeEnergy(for: workout),
-                distanceMeters: Self.distance(for: workout)
-            )
-        }
-        return WorkoutResult(values: values, rawSamples: workouts)
     }
 
     func sourceSamples(
@@ -599,5 +682,88 @@ enum SleepSessionSelector {
             .reduce(into: Set<UUID>()) { result, cluster in
                 result.formUnion(cluster.uuids)
             }
+    }
+}
+
+struct HealthKitSampleWindow: Equatable, Sendable {
+    var start: Date
+    var end: Date
+
+    func covers(_ other: HealthKitSampleWindow) -> Bool {
+        start <= other.start && end >= other.end
+    }
+
+    func union(_ other: HealthKitSampleWindow) -> HealthKitSampleWindow {
+        HealthKitSampleWindow(
+            start: min(start, other.start),
+            end: max(end, other.end)
+        )
+    }
+}
+
+struct HealthKitSampleWindowCache<Sample: HKSample> {
+    var window: HealthKitSampleWindow
+    var samples: [Sample]
+
+    func covers(_ other: HealthKitSampleWindow) -> Bool {
+        window.covers(other)
+    }
+
+    func samples(
+        in dayWindow: HealthKitSampleWindow,
+        options: HKQueryOptions
+    ) -> [Sample] {
+        let predicate = HKQuery.predicateForSamples(
+            withStart: dayWindow.start,
+            end: dayWindow.end,
+            options: options
+        )
+        return samples.filter { predicate.evaluate(with: $0) }
+    }
+}
+
+enum HealthKitQueryWindow {
+    static let vo2FetchSlack: TimeInterval = 24 * 60 * 60
+
+    static func vo2DayWindow(
+        earliest: Date,
+        dayEnd: Date
+    ) -> HealthKitSampleWindow {
+        HealthKitSampleWindow(start: earliest, end: dayEnd)
+    }
+
+    static func vo2FetchWindow(
+        earliest: Date,
+        dayEnd: Date,
+        now: Date
+    ) -> HealthKitSampleWindow {
+        HealthKitSampleWindow(
+            start: earliest,
+            end: max(dayEnd, now).addingTimeInterval(vo2FetchSlack)
+        )
+    }
+
+    static func sleepDayWindow(
+        boundary: StoredDayBoundary
+    ) -> HealthKitSampleWindow {
+        HealthKitSampleWindow(
+            start: boundary.start.addingTimeInterval(-24 * 60 * 60),
+            end: boundary.end.addingTimeInterval(
+                SleepSessionSelector.maximumGap + 1
+            )
+        )
+    }
+
+    static func sleepFetchWindow(
+        boundary: StoredDayBoundary,
+        now: Date
+    ) -> HealthKitSampleWindow {
+        let day = sleepDayWindow(boundary: boundary)
+        return HealthKitSampleWindow(
+            start: day.start,
+            end: max(day.end, now.addingTimeInterval(
+                SleepSessionSelector.maximumGap + 1
+            ))
+        )
     }
 }

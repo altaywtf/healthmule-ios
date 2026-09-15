@@ -249,6 +249,8 @@ actor HealthKitClient: HealthChangeTracking {
     private let defaults: UserDefaults
     private var observerQueries: [HKObserverQuery] = []
     private var observationHandler: ObservationHandler?
+    var vo2WindowCache: HealthKitSampleWindowCache<HKQuantitySample>?
+    var sleepWindowCache: HealthKitSampleWindowCache<HKCategorySample>?
 
     init(
         store: HKHealthStore = HKHealthStore(),
@@ -263,6 +265,11 @@ actor HealthKitClient: HealthChangeTracking {
         )
         defaults = defaultsSuiteName.flatMap(UserDefaults.init(suiteName:))
             ?? .standard
+    }
+
+    func resetDailyQueryWindows() {
+        vo2WindowCache = nil
+        sleepWindowCache = nil
     }
 
     func executeCancellableQuery<Value: Sendable>(

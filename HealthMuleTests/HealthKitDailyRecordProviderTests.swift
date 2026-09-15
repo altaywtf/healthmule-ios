@@ -1,4 +1,5 @@
 @preconcurrency import HealthKit
+import HealthMuleCore
 import XCTest
 @testable import HealthMule
 
@@ -155,11 +156,98 @@ final class HealthKitDailyRecordProviderTests: XCTestCase {
         XCTAssertFalse(samples.contains { $0.uuid == weight.uuid })
     }
 
+    func testVO2FetchWindowCoversLaterDaysFromTheFirstQuery() {
+        let earliest = Date(timeIntervalSince1970: 0)
+        let firstDayEnd = Date(timeIntervalSince1970: 86_400)
+        let laterDayEnd = Date(timeIntervalSince1970: 86_400 * 30)
+        let now = Date(timeIntervalSince1970: 86_400 * 40)
+        let fetch = HealthKitQueryWindow.vo2FetchWindow(
+            earliest: earliest,
+            dayEnd: firstDayEnd,
+            now: now
+        )
+        let laterDay = HealthKitQueryWindow.vo2DayWindow(
+            earliest: earliest,
+            dayEnd: laterDayEnd
+        )
+
+        XCTAssertTrue(fetch.covers(laterDay))
+        XCTAssertEqual(fetch.start, earliest)
+        XCTAssertEqual(
+            fetch.end,
+            now.addingTimeInterval(HealthKitQueryWindow.vo2FetchSlack)
+        )
+    }
+
+    func testSleepFetchWindowFromOldestDayCoversALaterDayWindow() throws {
+        let start = Date(timeIntervalSince1970: 86_400)
+        let first = StoredDayBoundary(
+            date: try LocalDate(rawValue: "2026-01-02"),
+            timeZoneIdentifier: "UTC",
+            start: start,
+            end: start.addingTimeInterval(86_400)
+        )
+        let laterStart = start.addingTimeInterval(86_400 * 10)
+        let later = StoredDayBoundary(
+            date: try LocalDate(rawValue: "2026-01-12"),
+            timeZoneIdentifier: "UTC",
+            start: laterStart,
+            end: laterStart.addingTimeInterval(86_400)
+        )
+        let now = later.end.addingTimeInterval(86_400)
+        let fetch = HealthKitQueryWindow.sleepFetchWindow(
+            boundary: first,
+            now: now
+        )
+
+        XCTAssertTrue(fetch.covers(HealthKitQueryWindow.sleepDayWindow(boundary: later)))
+    }
+
+    func testCachedVO2SamplesMatchAPerDayStrictEndDatePredicate() throws {
+        let earliest = Date(timeIntervalSince1970: 0)
+        let dayEnd = Date(timeIntervalSince1970: 86_400)
+        let included = try quantitySample(
+            identifier: .vo2Max,
+            value: 40,
+            unit: HKUnit(from: "ml/kg*min"),
+            device: HKDevice.local(),
+            start: Date(timeIntervalSince1970: 1_000),
+            end: Date(timeIntervalSince1970: 2_000)
+        )
+        let excluded = try quantitySample(
+            identifier: .vo2Max,
+            value: 42,
+            unit: HKUnit(from: "ml/kg*min"),
+            device: HKDevice.local(),
+            start: Date(timeIntervalSince1970: 90_000),
+            end: Date(timeIntervalSince1970: 90_100)
+        )
+        let cache = HealthKitSampleWindowCache(
+            window: HealthKitQueryWindow.vo2FetchWindow(
+                earliest: earliest,
+                dayEnd: dayEnd,
+                now: Date(timeIntervalSince1970: 200_000)
+            ),
+            samples: [included, excluded]
+        )
+        let filtered = cache.samples(
+            in: HealthKitQueryWindow.vo2DayWindow(
+                earliest: earliest,
+                dayEnd: dayEnd
+            ),
+            options: [.strictEndDate]
+        )
+
+        XCTAssertEqual(filtered.map(\.uuid), [included.uuid])
+    }
+
     private func quantitySample(
         identifier: HKQuantityTypeIdentifier,
         value: Double,
         unit: HKUnit,
-        device: HKDevice
+        device: HKDevice,
+        start: Date = Date(timeIntervalSince1970: 1_000),
+        end: Date = Date(timeIntervalSince1970: 1_001)
     ) throws -> HKQuantitySample {
         let type = try XCTUnwrap(
             HKObjectType.quantityType(forIdentifier: identifier)
@@ -167,8 +255,8 @@ final class HealthKitDailyRecordProviderTests: XCTestCase {
         return HKQuantitySample(
             type: type,
             quantity: HKQuantity(unit: unit, doubleValue: value),
-            start: Date(timeIntervalSince1970: 1_000),
-            end: Date(timeIntervalSince1970: 1_001),
+            start: start,
+            end: end,
             device: device,
             metadata: nil
         )

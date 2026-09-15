@@ -288,6 +288,8 @@ The UI never presents readable-type counts as permission progress.
   boundary.
 - The active selected start remains the VO₂ carry-forward lower bound even when
   older staged artifacts remain available for repair after a range is narrowed.
+  One VO₂ sample query covers that window through the current time and is
+  filtered per day, so a backfill does not re-read a widening sample set.
 
 ### Day boundaries
 
@@ -304,7 +306,10 @@ The UI never presents readable-type counts as permission progress.
 ### Sleep clustering
 
 - Sleep queries include a 24-hour lookback plus a bounded four-hour look-ahead
-  so sessions crossing midnight can be clustered.
+  so sessions crossing midnight can be clustered. One query covers the selected
+  history window and is reused per day in a reconcile; clustering still runs
+  against that day’s boundary.
+- A cluster is not eligible until four hours have elapsed since its latest
 - A cluster is not eligible until four hours have elapsed since its latest
   fragment. That prevents an incomplete pre-midnight fragment from being
   published on two adjacent dates.

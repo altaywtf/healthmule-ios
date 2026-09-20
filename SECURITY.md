@@ -5,7 +5,7 @@
 Do not open a public issue or include vulnerability details in a pull request.
 
 [Report the vulnerability privately through GitHub Security
-Advisories](https://github.com/uinaf/healthmule-ios/security/advisories/new).
+Advisories](https://github.com/altaywtf/healthmule-ios/security/advisories/new).
 If that route is unavailable, contact a repository maintainer through an
 existing private channel and ask for a secure reporting route before sharing
 sensitive details.

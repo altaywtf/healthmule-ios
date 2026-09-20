@@ -1,5 +1,3 @@
-![healthmule-ios — privacy-first Apple Health exports to Google Drive.](https://uinaf.dev/og/banner/healthmule-ios.png)
-
 # HealthMule
 
 HealthMule is an open-source iPhone and Apple Watch app that exports a small,

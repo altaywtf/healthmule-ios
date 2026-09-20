@@ -66,13 +66,16 @@ HealthKit, Google, background-delivery, and Watch changes may also need the
   HealthKit metadata, signing files, or local credential configuration.
 - Preserve explicit JSON `null` values and unknown fields in exported records.
 
+Before retesting a security report, update pre-release or TestFlight
+installations to the most recent build. Remove personal health data from reports.
+
 ## Pull request expectations
 
 - Keep each pull request focused on one change.
 - Add meaningful tests for behavior changes.
 - Update the owning documentation when a contract changes.
 - Fill in the inherited [pull request
-  template](https://github.com/uinaf/.github/blob/main/PULL_REQUEST_TEMPLATE.md)
+  template](https://github.com/altaywtf/.github/blob/main/PULL_REQUEST_TEMPLATE.md)
   with risks, verification evidence, and complexity impact.
 - Add a sanitized review aid, such as a screenshot or recording, when it
   explains the change faster than prose.

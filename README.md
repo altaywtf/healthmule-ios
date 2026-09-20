@@ -89,7 +89,7 @@ workflow rather than a developer Mac. See
 - [Product and export contract](docs/specs/healthkit-drive-exporter.md)
 - [TestFlight distribution](docs/DISTRIBUTION.md)
 - [Sync-store scaling decision](docs/decisions/sync-store-persistence.md)
-- [Security reporting](SECURITY.md)
+- [Security reporting](https://github.com/altaywtf/.github/blob/main/SECURITY.md)
 
 ## Contributing
 

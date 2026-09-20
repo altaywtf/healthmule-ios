@@ -330,10 +330,10 @@ for workflow in \
     fail "${workflow} must pin the supported Node 24 checkout action."
 done
 scan_workflow=.github/workflows/scan.yml
-# First-party reusable workflows track main by design, so baseline changes
-# reach every adopter without a pin bump per repository.
-grep -Eq '^    uses: uinaf/\.github/\.github/workflows/scan\.yml@main$' "${scan_workflow}" ||
-  fail "Scanning must call the shared workflow on main."
+# Renovate retains the main annotation when pinning the shared workflow.
+scan_reference='^    uses: uinaf/\.github/\.github/workflows/scan\.yml@(main|[0-9a-f]{40} # main)$'
+grep -Eq "${scan_reference}" "${scan_workflow}" ||
+  fail "Scanning must call the shared workflow on main or a full SHA annotated with # main."
 for trigger in pull_request schedule workflow_dispatch; do
   grep -Eq "^  ${trigger}:" "${scan_workflow}" ||
     fail "Scanning must include the ${trigger} trigger."

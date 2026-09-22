@@ -20,18 +20,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
-      compile: ${{ steps.filter.outputs.compile }}
-
+      compile: ${{ contains(fromJSON(steps.changes.outputs.changes), 'compile') }}
     steps:
-      - name: Check out repository history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Select app compile changes
-        id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      - id: changes
+        uses: uinaf/.github/.github/actions/changes@main
         with:
           filters: |
             compile:

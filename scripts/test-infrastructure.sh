@@ -340,9 +340,11 @@ for trigger in pull_request schedule workflow_dispatch; do
 done
 grep -Fq "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9" .github/workflows/verify.yml ||
   fail "Fast CI must pin the Swift build cache action."
-grep -Fq "uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d" .github/workflows/verify.yml ||
-  fail "Fast CI must pin the app compile path selector."
-grep -Fq "compile: \${{ steps.filter.outputs.compile }}" .github/workflows/verify.yml ||
+# The organization's Actions policy accepts branch references for reusable
+# workflows but requires a full SHA for actions.
+grep -Eq '^        uses: uinaf/\.github/\.github/actions/changes@[0-9a-f]{40} # main$' .github/workflows/verify.yml ||
+  fail "Fast CI must pin the shared app compile path selector to a full SHA annotated with # main."
+grep -Fq "compile: \${{ contains(fromJSON(steps.changes.outputs.changes), 'compile') }}" .github/workflows/verify.yml ||
   fail "Fast CI must expose the app compile selection."
 grep -Fq "if: needs.changes.outputs.compile == 'true'" .github/workflows/verify.yml ||
   fail "The macOS compile lane must run only for selected app changes."

@@ -69,7 +69,6 @@ jobs:
             exit 0
           fi
 
-          # Markdown backticks are intentionally literal in these strings.
           # shellcheck disable=SC2016
           body="$(
             printf '%s\n' \

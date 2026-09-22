@@ -111,8 +111,6 @@ jobs:
             HealthMuleApp/Resources/Info.plist
           key: verify-xcode-dependencies-v4-${{ github.event.repository.name }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode-toolchain.outputs.hash }}-${{ hashFiles('Package.swift', 'HealthMule.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'project.yml', 'scripts/install-xcodegen.sh') }}
 
-      # make verify only parses Swift. This is the gate that type checks the
-      # iOS app and the embedded Watch app.
       - name: Build unsigned app and Watch app
         run: make build
 

@@ -23,7 +23,7 @@ jobs:
       compile: ${{ contains(fromJSON(steps.changes.outputs.changes), 'compile') }}
     steps:
       - id: changes
-        uses: uinaf/.github/.github/actions/changes@273d0888178ba4795605c440bef144d8882331fc # v1.0.0
+        uses: uinaf/.github/.github/actions/changes@ce25bc56a1a5c182e8bef402b3eceaca331608a1 # v1.0.1
         with:
           filters: |
             compile:

@@ -22,5 +22,4 @@ jobs:
   scan:
     permissions:
       contents: read
-    # Renovate updates this first-party workflow, retaining the main annotation.
-    uses: uinaf/.github/.github/workflows/scan.yml@ddd5682967e3d5725bd2a551ce951c0bc055efba # main
+    uses: uinaf/.github/.github/workflows/scan.yml@273d0888178ba4795605c440bef144d8882331fc # v1.0.0

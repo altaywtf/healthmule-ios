@@ -330,19 +330,18 @@ for workflow in \
     fail "${workflow} must pin the supported Node 24 checkout action."
 done
 scan_workflow=.github/workflows/scan.yml
-# Renovate retains the main annotation when pinning the shared workflow.
-scan_reference='^    uses: uinaf/\.github/\.github/workflows/scan\.yml@(main|[0-9a-f]{40} # main)$'
+scan_reference='^    uses: uinaf/\.github/\.github/workflows/scan\.yml@[0-9a-f]{40} # v[0-9.]+$'
 grep -Eq "${scan_reference}" "${scan_workflow}" ||
-  fail "Scanning must call the shared workflow on main or a full SHA annotated with # main."
+  fail "Scanning must pin the shared workflow to a full SHA annotated with its release tag."
 for trigger in pull_request schedule workflow_dispatch; do
   grep -Eq "^  ${trigger}:" "${scan_workflow}" ||
     fail "Scanning must include the ${trigger} trigger."
 done
 grep -Fq "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9" .github/workflows/verify.yml ||
   fail "Fast CI must pin the Swift build cache action."
-grep -Fq "uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d" .github/workflows/verify.yml ||
-  fail "Fast CI must pin the app compile path selector."
-grep -Fq "compile: \${{ steps.filter.outputs.compile }}" .github/workflows/verify.yml ||
+grep -Eq '^        uses: uinaf/\.github/\.github/actions/changes@[0-9a-f]{40} # v[0-9.]+$' .github/workflows/verify.yml ||
+  fail "Fast CI must pin the shared app compile path selector to a full SHA annotated with its release tag."
+grep -Fq "compile: \${{ contains(fromJSON(steps.changes.outputs.changes), 'compile') }}" .github/workflows/verify.yml ||
   fail "Fast CI must expose the app compile selection."
 grep -Fq "if: needs.changes.outputs.compile == 'true'" .github/workflows/verify.yml ||
   fail "The macOS compile lane must run only for selected app changes."

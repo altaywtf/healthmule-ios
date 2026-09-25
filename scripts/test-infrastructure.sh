@@ -329,14 +329,11 @@ for workflow in \
   grep -Fq "uses: ${checkout_action}" "${workflow}" ||
     fail "${workflow} must pin the supported Node 24 checkout action."
 done
-scan_workflow=.github/workflows/scan.yml
-scan_reference='^    uses: uinaf/\.github/\.github/workflows/scan\.yml@[0-9a-f]{40} # v[0-9.]+$'
-grep -Eq "${scan_reference}" "${scan_workflow}" ||
-  fail "Scanning must pin the shared workflow to a full SHA annotated with its release tag."
-for trigger in pull_request schedule workflow_dispatch; do
-  grep -Eq "^  ${trigger}:" "${scan_workflow}" ||
-    fail "Scanning must include the ${trigger} trigger."
-done
+scan_reference='^        uses: uinaf/\.github/\.github/actions/scan@[0-9a-f]{40} # v[0-9.]+$'
+grep -Eq "${scan_reference}" .github/workflows/verify.yml ||
+  fail "Verify must pin the shared scan action to a full SHA annotated with its release tag."
+grep -Eq '^  workflow_dispatch:' .github/workflows/verify.yml ||
+  fail "Verify must support manual full-history scans."
 grep -Fq "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9" .github/workflows/verify.yml ||
   fail "Fast CI must pin the Swift build cache action."
 grep -Eq '^        uses: uinaf/\.github/\.github/actions/changes@[0-9a-f]{40} # v[0-9.]+$' .github/workflows/verify.yml ||

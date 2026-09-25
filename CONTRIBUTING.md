@@ -83,8 +83,7 @@ installations to the most recent build. Remove personal health data from reports
 ## Dependency automerge
 
 - Eligible Renovate updates use GitHub auto-merge after required checks:
-  `verify`, `scan / Actionlint`, `scan / Gitleaks`, `scan / TruffleHog`, and
-  `scan / Zizmor`.
+  `verify` and `scan / Scan`.
 - Checks are non-strict; repository admins retain direct writes through
   a bypass limited to the check ruleset. Renovate has no bypass.
 - Shared release-age and major/digest rules remain unchanged. Add new voting

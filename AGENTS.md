@@ -56,7 +56,7 @@ What the gates prove:
   those three independent lanes concurrently with a bounded job count.
 - Parsing is not type checking, so app, Watch, and UI changes also need
   `make build` or `make smoke` locally.
-- This public repository uses standard GitHub-hosted `ubuntu-24.04` and
+- This public repository uses standard GitHub-hosted `ubuntu-26.04` and
   `macos-26` (Apple silicon, Xcode 26) runners for every workflow.
 - Required CI always runs `make verify` on Linux. It adds `make build` on macOS
   when app, Watch, project, package, build-script, or compile-workflow inputs

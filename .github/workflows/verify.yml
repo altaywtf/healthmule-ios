@@ -43,7 +43,8 @@ jobs:
 
   swift:
     name: Swift verification
-    runs-on: ubuntu-26.04
+    # ubuntu-26.04 images ship no Swift toolchain yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:

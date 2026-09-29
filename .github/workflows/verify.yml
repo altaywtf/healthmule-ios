@@ -18,13 +18,13 @@ concurrency:
 jobs:
   changes:
     name: Select compile lane
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     outputs:
       compile: ${{ contains(fromJSON(steps.changes.outputs.changes), 'compile') }}
     steps:
       - id: changes
-        uses: uinaf/.github/.github/actions/changes@168dfda80c93edc6c7085675e0982e32e2229c97 # v1.0.2
+        uses: uinaf/.github/.github/actions/changes@7bc3f9ea25b5494f4026dfdb64fb866a520afcd0 # v3.0.0
         with:
           filters: |
             compile:
@@ -43,6 +43,7 @@ jobs:
 
   swift:
     name: Swift verification
+    # ubuntu-26.04 images ship no Swift toolchain yet.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -118,7 +119,7 @@ jobs:
   verify:
     needs: [changes, swift, compile]
     if: ${{ always() }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read

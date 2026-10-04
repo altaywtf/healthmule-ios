@@ -65,6 +65,15 @@ What the gates prove:
 - The iOS unit and Simulator UI suites belong to `make verify-full`, which runs
   locally or through the manual `Full Verify` workflow, never on a pull request.
 
+## Delivery
+
+- Repository admins push to `main` directly; contributors open pull requests.
+- A push to `main` runs `Verify` only; nothing ships on merge.
+- `Upload TestFlight` is a manual dispatch from `main` that uploads a signed
+  build to App Store Connect ([TestFlight delivery](docs/DISTRIBUTION.md)).
+  External testing and App Store submission stay manual App Store Connect
+  steps.
+
 ## Repo rules
 
 - Keep `HealthMuleCore` Foundation-only and deterministic.

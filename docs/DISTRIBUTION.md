@@ -76,5 +76,3 @@ testing and App Store submission remain explicit App Store Connect steps.
 - No certificate or provisioning profile is copied from a developer Mac; Xcode
   automatic signing manages them with the API key.
 - Workflow reruns receive a distinct numeric build number.
-- Private-repository macOS runner usage counts against the GitHub plan's hosted
-  runner allowance.

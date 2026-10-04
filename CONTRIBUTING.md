@@ -83,7 +83,9 @@ installations to the most recent build. Remove personal health data from reports
 ## Dependency automerge
 
 - Eligible Renovate updates use GitHub auto-merge after required checks:
-  `verify`. The shared scan reports but is not required.
+  `verify`. The shared scan is the last step of `verify`: it passes through
+  on pull requests and scans on pushes to `main` and manual runs, where a
+  failure turns `verify` red.
 - Checks are non-strict; repository admins retain direct writes through
   a bypass limited to the check ruleset. Renovate has no bypass.
 - Shared release-age and major/digest rules remain unchanged. Add new voting

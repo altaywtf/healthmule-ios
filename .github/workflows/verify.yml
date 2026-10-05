@@ -24,7 +24,7 @@ jobs:
       compile: ${{ contains(fromJSON(steps.changes.outputs.changes), 'compile') }}
     steps:
       - id: changes
-        uses: uinaf/.github/.github/actions/changes@dbeb4a0b5f9ceb0b0af48044dfc94205b2b70248 # v3.0.2
+        uses: uinaf/.github/.github/actions/changes@53b7216da41dce9b5307831668b346bf778308ae # v3.0.4
         with:
           filters: |
             compile:
@@ -144,4 +144,4 @@ jobs:
           persist-credentials: false
       - name: Scan pushed commits
         if: ${{ !cancelled() }}
-        uses: uinaf/.github/.github/actions/scan@dbeb4a0b5f9ceb0b0af48044dfc94205b2b70248 # v3.0.2
+        uses: uinaf/.github/.github/actions/scan@53b7216da41dce9b5307831668b346bf778308ae # v3.0.4

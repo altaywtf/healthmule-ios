@@ -67,8 +67,7 @@ Run `make verify` for the fast required gate. App and UI changes also need an
 appropriate Xcode or Simulator check. The complete command matrix and pull
 request expectations live in [Contributing](CONTRIBUTING.md).
 
-Releases are archived and uploaded by the manual, main-only GitHub Actions
-workflow rather than a developer Mac. See
+Releases ship from CI, not a developer Mac; see
 [TestFlight distribution](docs/DISTRIBUTION.md).
 
 ## Privacy boundary

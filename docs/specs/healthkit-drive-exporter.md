@@ -127,7 +127,8 @@ Rules:
   fractional digits, with exact half values rounded away from zero, before
   semantic comparison and encoding. Steps remain integers; `null` and unknown
   future fields are not quantized.
-- All timestamps are ISO 8601 with UTC offset.
+- All timestamps are complete ISO 8601 values with a UTC offset and valid
+  calendar dates; trailing content and out-of-range time components are rejected.
 - Do not include GPS routes, raw heart-rate series, clinical records,
   medications, symptoms, reproductive data, or free-text metadata.
 - Preserve unknown future fields when decoding a previously written record.

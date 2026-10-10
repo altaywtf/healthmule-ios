@@ -255,6 +255,24 @@ struct SchemaTests {
         }
     }
 
+    @Test(arguments: [
+        "2026-02-30T12:00:00Z",
+        "2025-02-29T12:00:00+03:00",
+        "2026-07-23T18:10:00ZjunkZ",
+        "2026-07-23T18:10:00+03:00junk+03:00",
+        "2026-07-23T25:00:00Z",
+        "2026-07-23T18:61:00Z",
+    ])
+    func rejectsMalformedTimestampComponents(_ rawValue: String) throws {
+        #expect(throws: SchemaValidationError.invalidTimestamp(rawValue)) {
+            _ = try ISO8601Timestamp(rawValue: rawValue)
+        }
+        let encoded = try JSONEncoder().encode(rawValue)
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(ISO8601Timestamp.self, from: encoded)
+        }
+    }
+
     @Test
     func renderingPreservesFractionalTimestampInstants() throws {
         let timeZone = try #require(TimeZone(secondsFromGMT: 3 * 60 * 60))

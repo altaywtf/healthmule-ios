@@ -88,9 +88,8 @@ public struct ISO8601Timestamp: Codable, Hashable, Comparable, Sendable {
 
     public init(rawValue: String) throws {
         guard
-            Self.hasFourDigitYear(rawValue),
-            Self.parse(rawValue) != nil,
-            Self.hasExplicitOffset(rawValue)
+            Self.hasValidComponents(rawValue),
+            Self.parse(rawValue) != nil
         else {
             throw SchemaValidationError.invalidTimestamp(rawValue)
         }
@@ -196,28 +195,15 @@ public struct ISO8601Timestamp: Codable, Hashable, Comparable, Sendable {
         return try? format.parse(value)
     }
 
-    private static func hasFourDigitYear(_ value: String) -> Bool {
-        let bytes = Array(value.utf8)
-        guard bytes.count >= 5, bytes[4] == 0x2D else { return false }
-        return bytes[0...3].allSatisfy { $0 >= 0x30 && $0 <= 0x39 }
-    }
-
-    private static func hasExplicitOffset(_ value: String) -> Bool {
-        if value.hasSuffix("Z") {
-            return true
-        }
-        guard value.count >= 6 else { return false }
-        let suffix = value.suffix(6)
-        let parts = Array(suffix)
-        guard
-            (parts[0] == "+" || parts[0] == "-"),
-            parts[3] == ":"
-        else {
+    private static func hasValidComponents(_ value: String) -> Bool {
+        // Foundation accepts valid prefixes and normalizes impossible dates.
+        // Validate the complete wire value before asking it for an instant.
+        let pattern = #"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T"#
+            + #"(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\.[0-9]+)?|24:00:00(?:\.0+)?)"#
+            + #"(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z"#
+        guard value.range(of: pattern, options: .regularExpression) != nil else {
             return false
         }
-        return parts[1].isNumber
-            && parts[2].isNumber
-            && parts[4].isNumber
-            && parts[5].isNumber
+        return (try? LocalDate(rawValue: String(value.prefix(10)))) != nil
     }
 }

@@ -170,6 +170,38 @@ struct SchemaTests {
         #expect(try DailyHealthRecordCodec.semanticallyEqual(noisy, clean))
     }
 
+    @Test(arguments: [
+        (1.005, 1.01), (4.015, 4.02), (-1.005, -1.01),
+        (1.005.nextDown, 1.00), (1.005.nextUp, 1.01),
+        ((-1.005).nextDown, -1.01), ((-1.005).nextUp, -1.00),
+        (0.005, 0.01), (-0.005, -0.01),
+        (0.005.nextDown, 0.0), (-Double.leastNonzeroMagnitude, 0.0),
+        (1e16, 1e16), (Double.greatestFiniteMagnitude, Double.greatestFiniteMagnitude),
+    ])
+    func codecUsesDecimalMidpoints(value: Double, expected: Double) throws {
+        var record = try sampleRecord(
+            generatedAt: "2026-07-23T18:10:00+03:00",
+            deviceNames: ["iPhone"]
+        )
+        let unknown = try decimal("1.0050000000000000000000000000000000001")
+        record.metrics.weightKg = value
+        record.metrics.additionalFields["futurePrecision"] = .number(unknown)
+        record.workouts[0].activeEnergyKcal = value
+        record.workouts[1].activeEnergyKcal = nil
+        let encoded = try DailyHealthRecordCodec.encode(record)
+        let decoded = try DailyHealthRecordCodec.decode(encoded)
+
+        #expect(decoded.metrics.weightKg == expected)
+        #expect(decoded.workouts.first { $0.id == "b" }?.activeEnergyKcal == expected)
+        #expect(decoded.totals.workoutActiveEnergyKcal == expected)
+        #expect(decoded.metrics.additionalFields["futurePrecision"] == .number(unknown))
+        #expect(try DailyHealthRecordCodec.encode(decoded) == encoded)
+        var rounded = record
+        rounded.metrics.weightKg = expected
+        rounded.workouts[0].activeEnergyKcal = expected
+        #expect(try DailyHealthRecordCodec.semanticallyEqual(record, rounded))
+    }
+
     @Test
     func unknownNumberBeyondInt64RoundTripsExactly() throws {
         let base = try DailyHealthRecordCodec.encode(

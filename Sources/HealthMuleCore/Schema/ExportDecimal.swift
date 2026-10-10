@@ -7,13 +7,22 @@ enum ExportDecimalError: Error {
 enum ExportDecimal {
     static func quantized(_ value: Double) -> Double {
         guard value.isFinite else { return value }
-        let maximumScalableMagnitude = Double.greatestFiniteMagnitude / 100
-        guard abs(value) <= maximumScalableMagnitude else {
-            return normalizedZero(value)
+        // Larger Doubles are already integers; smaller magnitudes round to zero.
+        guard abs(value) < 1e16 else { return value }
+        guard abs(value) >= 0.005 else { return 0 }
+        // The shortest decimal representation defines the midpoint, not binary noise.
+        guard var decimal = Decimal(
+            string: String(value),
+            locale: Locale(identifier: "en_US_POSIX")
+        ) else {
+            preconditionFailure("A finite measurement in the decimal range must parse.")
         }
-        return normalizedZero(
-            (value * 100).rounded(.toNearestOrAwayFromZero) / 100
-        )
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &decimal, 2, .plain)
+        guard let result = Double(NSDecimalNumber(decimal: rounded).stringValue) else {
+            preconditionFailure("A rounded finite decimal must parse as a Double.")
+        }
+        return normalizedZero(result)
     }
 
     static func quantized(_ value: Double?) -> Double? {

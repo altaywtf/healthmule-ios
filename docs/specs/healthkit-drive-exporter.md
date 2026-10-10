@@ -124,9 +124,18 @@ Rules:
 - Missing or unauthorized values are `null`; never invent zero.
 - Numeric values use SI/metric units shown in the field names.
 - Known decimal measurements are rounded to the nearest value with at most two
-  fractional digits, with exact half values rounded away from zero, before
-  semantic comparison and encoding. Steps remain integers; `null` and unknown
-  future fields are not quantized.
+  fractional digits before semantic comparison and encoding. Use the shortest
+  round-trip decimal representation of each finite `Double` measurement or
+  aggregate, with decimal half values rounded away from zero: `1.005` becomes
+  `1.01`, `4.015` becomes `4.02`, and `-1.005` becomes `-1.01`. Values immediately
+  below or above a midpoint stay on their respective sides. Steps remain
+  integers; `null` and unknown future fields are not quantized.
+- Decimal rounding applies to newly aggregated or encoded records. Previously
+  exported records retain their rounded values and semantic digests; upgrading
+  does not restage them for rounding alone. When ordinary sync rebuilds a day
+  from HealthKit, a changed rounded value changes its semantic digest and
+  stages the updated export. Historical regeneration requires an explicit
+  user-requested backfill.
 - All timestamps are complete ISO 8601 values with a UTC offset and valid
   calendar dates; trailing content and out-of-range time components are rejected.
 - Do not include GPS routes, raw heart-rate series, clinical records,

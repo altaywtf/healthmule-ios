@@ -94,6 +94,41 @@ struct FileSyncStoreTests {
     }
 
     @Test
+    func decimalRoundingPreservesExistingExportsUntilDayIsRebuilt() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try FileSyncStore(rootDirectory: directory)
+        var prior = try makeRecord()
+        prior.metrics.weightKg = 1.00 // Previously exported binary midpoint result.
+        _ = try await store.stageDaily(prior)
+        let artifact = try #require(
+            try await store.dueArtifacts(at: Date(), includeDeferred: true).first
+        )
+        try await store.markUploaded(artifact)
+        let file = directory.appendingPathComponent("daily/2026-07-23.json")
+        let priorContents = try Data(contentsOf: file)
+
+        let reopened = try FileSyncStore(rootDirectory: directory)
+        try await reopened.recover()
+        #expect(try Data(contentsOf: file) == priorContents)
+        #expect(try await reopened.pendingUploadCount() == 0)
+        #expect(
+            try await reopened.stageDaily(prior)
+                == .unchanged(.daily(prior.date), revision: 1)
+        )
+
+        var rebuilt = prior
+        rebuilt.metrics.weightKg = 1.005
+        #expect(
+            try await reopened.stageDaily(rebuilt)
+                == .staged(.daily(prior.date), revision: 2)
+        )
+        let updated = try DailyHealthRecordCodec.decode(Data(contentsOf: file))
+        #expect(updated.metrics.weightKg == 1.01)
+        #expect(try await reopened.pendingUploadCount() == 1)
+    }
+
+    @Test
     func changedRecordPreservesPriorUnknownFields() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

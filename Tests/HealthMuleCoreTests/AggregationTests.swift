@@ -249,6 +249,43 @@ struct AggregationTests {
         #expect(!encoded.contains(":-0"))
     }
 
+    @Test(arguments: [
+        (1.005, 1.01), (4.015, 4.02), (-1.005, -1.01),
+        (1.005.nextDown, 1.00), (1.005.nextUp, 1.01),
+        ((-1.005).nextDown, -1.01), ((-1.005).nextUp, -1.00),
+    ])
+    func aggregationUsesDecimalMidpoints(value: Double, expected: Double) throws {
+        let start = Date(timeIntervalSince1970: 0)
+        let record = try DailyHealthRecordAggregator.aggregate(
+            DailyAggregationInput(
+                date: try LocalDate(rawValue: "2026-07-23"),
+                timeZoneIdentifier: "UTC",
+                activeEnergyKcal: value,
+                restingHeartRateSamples: [
+                    TimedQuantitySample(id: "heart", measuredAt: start, value: value)
+                ],
+                workouts: [
+                    WorkoutSample(
+                        id: "workout",
+                        type: "other",
+                        start: start,
+                        end: start.addingTimeInterval(60),
+                        activeEnergyKcal: value,
+                        distanceMeters: nil
+                    )
+                ]
+            ),
+            generatedAt: start
+        )
+        #expect(record.metrics.activeEnergyKcal == expected)
+        #expect(record.metrics.restingHeartRateBpm == expected)
+        #expect(record.workouts[0].activeEnergyKcal == expected)
+        #expect(record.totals.workoutActiveEnergyKcal == expected)
+        let decoded = try DailyHealthRecordCodec.decode(DailyHealthRecordCodec.encode(record))
+        #expect(decoded.metrics.activeEnergyKcal == expected)
+        #expect(decoded.totals.workoutActiveEnergyKcal == expected)
+    }
+
     @Test
     func workoutTotalsAreDerivedFromRoundedExportedWorkouts() throws {
         let start = Date(timeIntervalSince1970: 0)
